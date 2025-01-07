@@ -1,6 +1,7 @@
 from env import DataCenterEnv
 import numpy as np
 import argparse
+import actor
 
 args = argparse.ArgumentParser()
 args.add_argument('--path', type=str, default='train.xlsx')
@@ -14,11 +15,11 @@ environment = DataCenterEnv(path_to_dataset)
 aggregate_reward = 0
 terminated = False
 state = environment.observation()
-
+agent = actor.UniformBuyActor()
 while not terminated:
     # agent is your own imported agent class
-    # action = agent.act(state)
-    action = np.random.uniform(-1, 1)
+    action = agent.act(state)
+    #action = np.random.uniform(-1, 1)
     # next_state is given as: [storage_level, price, hour, day]
     next_state, reward, terminated = environment.step(action)
     state = next_state
