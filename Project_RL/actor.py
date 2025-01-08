@@ -13,14 +13,16 @@ class UniformBuyActor(Actor):
 
 class MovingAverageActor(Actor):
     def __init__(self, path_to_data):
+        super().__init__()
         self.df = pd.read_excel(path_to_data)
-        self.price_values = self.df.iloc[:, 1:25].to_numpy()
+        self.price_values = self.df.iloc[:, 1:25]
 
     def act(self, state, window_size_d=7, hour_buffer=1) -> float:
         current_day = state[3] - 1
         current_hour = state[2] - 1
+        current_price = state[1]
         days = [current_day - i for i in range(window_size_d)]
         hours = [current_hour + i for i in range(-hour_buffer, hour_buffer+1)]
         subset = self.price_values.iloc[days, hours]
         moving_average = subset.mean(axis=None)
-        return moving_average
+        return moving_average, current_price
