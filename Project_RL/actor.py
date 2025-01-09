@@ -23,6 +23,9 @@ class MovingAverageActor(Actor):
         current_price = state[1]
         days = [current_day - i for i in range(window_size_d)]
         hours = [current_hour + i for i in range(-hour_buffer, hour_buffer+1)]
+        print(days)
+        print(hours)
         subset = self.price_values.iloc[days, hours]
         moving_average = subset.mean(axis=None)
+        # TODO: pick an action based on moving average
         return moving_average, current_price
