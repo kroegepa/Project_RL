@@ -10,7 +10,7 @@ class UniformBuyActor(Actor):
         return 0.5
 
 class AveragedBuyingActor(Actor):
-    def __init__(self, amount_of_prices: int = 120, threshold: float = 0.1):
+    def __init__(self, amount_of_prices: int = 12, threshold: float = 0.1):
         self.current_average : float = 0
         self.price_queue = []
         #Amount of prices to be considered
@@ -18,6 +18,13 @@ class AveragedBuyingActor(Actor):
         self.amount_of_prices = amount_of_prices
         #Deviation from average price to trigger buy sell action
         self.threshold = threshold
+
+    def act(self, state):
+        return_value = self.makeDecision(state[1])
+        self.updateAverage(state[1])
+        if state[0] > 160 and return_value == 1:
+            return 0
+        return return_value
     def updateAverage(self, newPrice:int):
         if len(self.price_queue) == self.amount_of_prices:
             self.current_average -= self.price_queue[0]/self.amount_of_prices
