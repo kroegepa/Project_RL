@@ -26,6 +26,8 @@ elif actor_type == 'tabular_q':
     agent = actor.TabularQActor(environment_train)
     agent.train()
 
+average_filled = 0
+amount_of_days = 0
 while not terminated:
     # agent is your own imported agent class
     action = agent.act(state)
@@ -34,8 +36,13 @@ while not terminated:
     next_state, reward, terminated = environment_test.step(action)
     state = next_state
     aggregate_reward += reward
+    storage,_,hour,_ = state
+    if hour == 24:
+        average_filled += storage
+        amount_of_days += 1
     print("Action:", action)
     print("Next state:", next_state)
     print("Reward:", reward)
 
 print(f'Total reward for actor {actor_type}: {aggregate_reward}')
+print(average_filled/amount_of_days)
