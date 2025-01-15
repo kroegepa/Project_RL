@@ -13,7 +13,7 @@ class UniformBuyActor(Actor):
         return 0.5
 
 class TabularQActor(Actor):
-    def __init__(self, environment_train, alpha=0.05, gamma=0.9, starting_epsilon=1, epsilon_decay_rate=0.999,
+    def __init__(self, environment_train, environment_test, alpha=0.005, gamma=0.9, starting_epsilon=1, epsilon_decay_rate=0.9995,
                 min_epsilon=0.1, num_episodes=5000):
         # Parameters
         self.alpha = alpha
@@ -30,6 +30,7 @@ class TabularQActor(Actor):
         self.storage_bins = [0, 30, 60, 90, 120]
         self.Q = np.zeros((len(self.bins), self.num_hours, len(self.storage_bins), len(self.actions)))
         self.environment_train = environment_train
+        self.environment_test = environment_test
 
     def train(self):
         print('Training the tabular Q-learning agent...')
@@ -48,13 +49,19 @@ class TabularQActor(Actor):
 
                 # Take action, observe reward and next state
                 action = self.actions[action_idx]
+
+
                 next_state, reward, terminated = self.environment_train.step(action)
                 next_storage, next_price, next_hour, _ = next_state
                 next_price_bin_index = np.digitize(next_price, self.bins) - 1
                 next_hour_index = int(next_hour-1)
                 next_storage_index = np.digitize(next_storage, self.storage_bins) - 1
+
+                if action > 0:  # Buying action
+                    reward += (24 - hour) * 0.1  # Encourage early purchases
+
                 # Update Q-value
-                if (hour == 16 and storage == 30) or (14 > hour > 11 and storage < 80):
+                if (14 > hour > 11 and storage < 80):
                     self.Q[price_bin_index, hour_index, storage_index, action_idx] = -10000000
                 else:
                     best_next_action = np.argmax(self.Q[next_price_bin_index, next_hour_index, next_storage_index, :])
@@ -69,7 +76,8 @@ class TabularQActor(Actor):
                 self.epsilon = self.min_epsilon
             
             if episode % 100 == 0:
-                print(f'-- Finished training {episode} episodes, epsilon = {self.epsilon}...')
+                val_reward = self.val()
+                print(f'-- Finished training {episode} episodes, epsilon = {self.epsilon}, validation reward = {val_reward}...')
         
     def act(self, state):
         storage, price, hour, _ = state
@@ -82,4 +90,19 @@ class TabularQActor(Actor):
         best_action = self.actions[best_action_index]
 
         return best_action
-        
+
+    def val(self):
+        aggregate_reward = 0
+        terminated = False
+        state = self.environment_test.reset()
+
+        while not terminated:
+            # agent is your own imported agent class
+            action = self.act(state)
+            #action = np.random.uniform(-1, 1)
+            # next_state is given as: [storage_level, price, hour, day]
+            next_state, reward, terminated = self.environment_test.step(action)
+            state = next_state
+            aggregate_reward += reward
+
+        return aggregate_reward

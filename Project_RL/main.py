@@ -19,15 +19,16 @@ environment_test = DataCenterEnv(path_to_dataset_test)
 
 aggregate_reward = 0
 terminated = False
-state = environment_test.observation()
+#state = environment_test.observation()
 if actor_type == 'uniform_baseline':
     agent = actor.UniformBuyActor()
 elif actor_type == 'tabular_q':
-    agent = actor.TabularQActor(environment_train)
+    agent = actor.TabularQActor(environment_train, environment_test)
     agent.train()
 
 average_filled = 0
 amount_of_days = 0
+state = environment_test.reset()
 while not terminated:
     # agent is your own imported agent class
     action = agent.act(state)
