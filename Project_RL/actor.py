@@ -70,7 +70,7 @@ class AveragedBuyingActor(Actor):
         
 
 class TabularQActor(Actor):
-    def __init__(self, environment_train, environment_test, alpha=0.005, gamma=0.9, starting_epsilon=1, epsilon_decay_rate=0.9995,
+    def __init__(self, environment_train, environment_test, amount_of_prices: int=161, threshold: float=0.1, alpha=0.005, gamma=0.9, starting_epsilon=1, epsilon_decay_rate=0.9995,
                 min_epsilon=0.1, num_episodes=5000):
         # Parameters
         self.alpha = alpha
@@ -80,7 +80,8 @@ class TabularQActor(Actor):
         self.min_epsilon = min_epsilon
         self.num_episodes = num_episodes
         #self.num_bins_price = 21  # Discretization bins for price
-        self.bins = [0, 20, 40, 60, 80, 100]
+        #self.bins = [0, 20, 40, 60, 80, 100]
+        self.bins = [-1.00001, -0.75, -0.5, -0.25, 0, 0.5, 1, 1.5] # bins for price difference from average
         self.num_hours = 24
         self.actions = [-1, -0.5, 0, 0.5, 1]  # Discrete actions
         self.max_steps = len(environment_train.timestamps)
@@ -89,6 +90,24 @@ class TabularQActor(Actor):
         self.environment_train = environment_train
         self.environment_test = environment_test
 
+        self.current_average : float = 0
+        self.price_queue = []
+        #Amount of prices to be considered: 161 is optimal window
+        #24 prices to a day
+        self.amount_of_prices = amount_of_prices
+        #Deviation from average price to trigger buy sell action
+        self.threshold = threshold
+
+    def updateAverage(self, newPrice:int):
+        if len(self.price_queue) == self.amount_of_prices:
+            self.current_average -= self.price_queue[0]/self.amount_of_prices
+            self.current_average += newPrice/self.amount_of_prices
+            self.price_queue.pop(0)
+            self.price_queue.append(newPrice)
+        else:
+            self.price_queue.append(newPrice)
+            self.current_average = sum(self.price_queue)/len(self.price_queue)
+
     def train(self):
         print('Training the tabular Q-learning agent...')
         for episode in range(self.num_episodes):
@@ -96,7 +115,13 @@ class TabularQActor(Actor):
             for t in range(self.max_steps):
                 # Choose action using epsilon-greedy policy
                 storage, price, hour, day = state
-                price_bin_index = np.digitize(price, self.bins) - 1
+                self.updateAverage(price)
+                #price_bin_index = np.digitize(price, self.bins) - 1
+                # instead of price bins, use difference from moving average
+                difference = price - self.current_average
+                fraction  = difference/self.current_average
+                #print(fraction)
+                price_bin_index = np.digitize(fraction, self.bins) - 1
                 hour_index = int(hour-1)
                 storage_index = np.digitize(storage, self.storage_bins) - 1
                 if np.random.rand() < self.epsilon:
