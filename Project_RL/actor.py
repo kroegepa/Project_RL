@@ -12,6 +12,63 @@ class UniformBuyActor(Actor):
     def act(self, state) -> float:
         return 0.5
 
+class HourlyMeansActor(Actor):
+    def __init__(self):
+        super().__init__()
+        self.means = {'Buy':
+                      [5, 4, 6, 3, 2, 7, 1, 24, 22, 23,
+                       8, 17, 16, 9, 21, 15, 18, 14],
+                      'Sell':
+                      [20, 10, 13, 11, 19, 12]}
+
+    def act(self, state):
+        storage_level, price, hour, day = state
+        if storage_level >= 130 and hour in self.means["Sell"]:
+            return -1
+        elif hour in self.means["Buy"]:
+            return 1
+        else:
+            return 0
+
+class AveragedBuyingActor(Actor):
+    def __init__(self, amount_of_prices: int = 12, threshold: float = 0.1):
+        self.current_average : float = 0
+        self.price_queue = []
+        #Amount of prices to be considered
+        #24 prices to a day
+        self.amount_of_prices = amount_of_prices
+        #Deviation from average price to trigger buy sell action
+        self.threshold = threshold
+
+    def act(self, state):
+        return_value = self.makeDecision(state[1])
+        self.updateAverage(state[1])
+        if state[0] > 160 and return_value == 1:
+            return 0
+        return return_value
+    def updateAverage(self, newPrice:int):
+        if len(self.price_queue) == self.amount_of_prices:
+            self.current_average -= self.price_queue[0]/self.amount_of_prices
+            self.current_average += newPrice/self.amount_of_prices
+            self.price_queue.pop(0)
+            self.price_queue.append(newPrice)
+        else:
+            self.price_queue.append(newPrice)
+            self.current_average = sum(self.price_queue)/len(self.price_queue)
+    def makeDecision(self, current_price:int) -> float:
+        if self.current_average == 0:
+            return 1
+        difference = current_price - self.current_average
+        fraction  = difference/self.current_average
+        #TODO maybe make sure that
+        if fraction > self.threshold:
+            return -1
+        if fraction * -1 > self.threshold:
+            return 1
+
+        return 0
+        
+
 class TabularQActor(Actor):
     def __init__(self, environment_train, environment_test, alpha=0.005, gamma=0.9, starting_epsilon=1, epsilon_decay_rate=0.9995,
                 min_epsilon=0.1, num_episodes=5000):

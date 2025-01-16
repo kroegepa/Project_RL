@@ -25,6 +25,8 @@ if actor_type == 'uniform_baseline':
 elif actor_type == 'tabular_q':
     agent = actor.TabularQActor(environment_train, environment_test)
     agent.train()
+elif actor_type == 'hour_means':
+    agent = actor.HourlyMeansActor()
 
 average_filled = 0
 amount_of_days = 0
