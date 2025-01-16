@@ -80,7 +80,7 @@ class TabularQActor(Actor):
         self.min_epsilon = min_epsilon
         self.num_episodes = num_episodes
         #self.num_bins_price = 21  # Discretization bins for price
-        self.bins = [0, 20, 40, 60, 80, 100, float('inf')]
+        self.bins = [0, 20, 40, 60, 80, 100]
         self.num_hours = 24
         self.actions = [-1, -0.5, 0, 0.5, 1]  # Discrete actions
         self.max_steps = len(environment_train.timestamps)
