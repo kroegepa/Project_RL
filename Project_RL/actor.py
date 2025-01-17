@@ -12,26 +12,92 @@ class UniformBuyActor(Actor):
     def act(self, state) -> float:
         return 0.5
 
-class HourlyMeansActor(Actor):
-    def __init__(self):
+class ExponentialMovingAverage(Actor):
+    def __init__(self, alpha=0.1, number_of_sales=0):
+        """
+        Initialize the actor with exponential running averages for each hour.
+
+        :param alpha: Smoothing factor for the exponential running average (0 < alpha <= 1).
+        :param number_of_sales: Initial number of sales made (default 0, max 6).
+        """
         super().__init__()
-        self.means = {'Buy':
-                      [5, 4, 6, 3, 2, 7, 1, 24, 22, 23,
-                       8, 17, 16, 9, 21, 15, 18, 14],
-                      'Sell':
-                      [20, 10, 13, 11, 19, 12]}
+        self.alpha = alpha
+        self.number_of_sales = number_of_sales
+        self.current_state = None
+
+        # Initialize a list to store running averages for each hour (24 hours) with a high default value
+        self.means = [10**6] * 24
+
+        # Initialize a list to store the last 29 purchase decisions
+        self.last_purchases = []
+
+    def get_plotting_data(self):
+        assert self.current_state is not None, (
+        "Remember to call .act() at least once before calling .get_plotting_data()")
+        storage_levels, prices, hours, days = self.current_state
+        mean = self.means[int(hours) - 1]
+        return (storage_levels, prices, hours, days, mean)
+
+    def _update_running_average(self, hour, price):
+        """
+        Update the exponential running average for a given hour and price.
+
+        :param hour: Hour of the day (integer).
+        :param price: Observed price at the given hour (float).
+        """
+        current_avg = self.means[hour]
+        if current_avg == 10**6:
+            # Initialize the running average if it's still at the default value
+            self.means[hour] = price
+        else:
+            # Update the running average using the exponential formula
+            self.means[hour] = self.alpha * price + (1 - self.alpha) * current_avg
+
+    def _update_purchase_history(self, price):
+        """
+        Update the purchase history to maintain the last 29 purchase decisions.
+
+        :param price: Price of the current purchase decision.
+        """
+        self.last_purchases.append(price)
+        if len(self.last_purchases) > 29:
+            self.last_purchases.pop(0)
 
     def act(self, state):
-        storage_level, price, hour, day = state
-        if storage_level >= 130 and hour in self.means["Sell"]:
-            return -1
-        elif hour in self.means["Buy"]:
-            return 1
-        else:
-            return 0
+        """
+        Decide the action based on storage level, price, and hour.
 
-class AveragedBuyingActor(Actor):
-    def __init__(self, amount_of_prices: int = 12, threshold: float = 0.1):
+        :param state: Tuple (storage_level, price, hour, day).
+        :return: Action to take: -1 (sell), 1 (buy), or 0 (hold).
+        """
+        self.current_state = state
+        storage_level, price, hour, day = state
+        hour = int(hour) - 1
+
+        # Update the running average for the current hour
+        self._update_running_average(hour, price)
+
+        # Order the running averages (cheapest first)
+        price_low_to_high_indexes = sorted(range(len(self.means)), key=lambda i: self.means[i])
+
+        # Decision logic for buying
+        if storage_level <= 160 and \
+        hour in price_low_to_high_indexes[:12 + self.number_of_sales]:
+            self._update_purchase_history(price)  # Track purchase decisions
+            return 1  # Buy
+
+        # Decision logic for selling
+        elif self.number_of_sales != 0 and \
+        hour in price_low_to_high_indexes[-self.number_of_sales:] and \
+        price > max(self.last_purchases, default=10**6):
+            return -1  # Sell
+
+        else:
+            return 0  # Hold
+
+
+class SimpleMovingAverageActor(Actor):
+    def __init__(self, amount_of_prices: int = 189, threshold: float = 0.1):
         self.current_average : float = 0
         self.price_queue = []
         #Amount of prices to be considered
@@ -39,8 +105,18 @@ class AveragedBuyingActor(Actor):
         self.amount_of_prices = amount_of_prices
         #Deviation from average price to trigger buy sell action
         self.threshold = threshold
+        self.current_state = None
+
+    def get_plotting_data(self):
+        assert self.current_state is not None, (
+        "Remember to call .act() at least once before calling .get_plotting_data()")
+        storage_levels, prices, hours, days = self.current_state
+        upper_threshold = self.current_average + (self.current_average * self.threshold)
+        lower_threshold = self.current_average - (self.current_average * self.threshold)
+        return (storage_levels, prices, hours, days, self.current_average, upper_threshold, lower_threshold)
 
     def act(self, state):
+        self.current_state = state
         return_value = self.makeDecision(state[1])
         self.updateAverage(state[1])
         if state[0] > 160 and return_value == 1:
@@ -65,8 +141,7 @@ class AveragedBuyingActor(Actor):
             return -1
         if fraction * -1 > self.threshold:
             return 1
-
-        return 0
+        return 0 # The actor needs to disproportionally buy more than sell, maybe this should be 1?
         
 
 class TabularQActor(Actor):
