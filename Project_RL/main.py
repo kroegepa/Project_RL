@@ -23,10 +23,12 @@ terminated = False
 if actor_type == 'uniform_baseline':
     agent = actor.UniformBuyActor()
 elif actor_type == 'tabular_q':
-    agent = actor.TabularQActor(environment_train, environment_test)
+    agent = actor.TabularQActor(environment_train, environment_test,num_episodes=5000)
     agent.train()
-elif actor_type == 'hour_means':
-    agent = actor.HourlyMeansActor()
+elif actor_type == 'SMA':
+    agent = actor.SimpleMovingAverageActor()
+elif actor_type == 'EMA':
+    agent = actor.ExponentialMovingAverage(number_of_sales=2)
 
 average_filled = 0
 amount_of_days = 0
@@ -39,13 +41,24 @@ while not terminated:
     next_state, reward, terminated = environment_test.step(action)
     state = next_state
     aggregate_reward += reward
-    storage,_,hour,_ = state
+    storage,price,hour,_ = state
+    if actor_type == 'tabular_q':
+        fraction = agent.calculate_fraction(price)
+        price_bin_index = np.digitize(fraction, agent.bins) - 1
+        storage_index = np.digitize(storage, agent.storage_bins) - 1
+        actor_reward_negative = agent.calculate_reward(-1,agent.bins[price_bin_index],agent.storage_bins[storage_index])
+        actor_reward_positve = agent.calculate_reward(1,agent.bins[price_bin_index],agent.storage_bins[storage_index])
     if hour == 24:
         average_filled += storage
         amount_of_days += 1
     print("Action:", action)
     print("Next state:", next_state)
     print("Reward:", reward)
-
+    if actor_type == 'tabular_q':
+        print("Agent reward negative:", actor_reward_negative)
+        print("Agent reward postive:", actor_reward_positve)
 print(f'Total reward for actor {actor_type}: {aggregate_reward}')
+print(f'Reward per year for actor {actor_type}: {aggregate_reward / 2}') # devide by 3 if run on the train set
 print(average_filled/amount_of_days)
+print(agent.Q)
+print(np.shape(agent.Q))
