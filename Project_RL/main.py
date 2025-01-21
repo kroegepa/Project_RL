@@ -23,7 +23,7 @@ terminated = False
 if actor_type == 'uniform_baseline':
     agent = actor.UniformBuyActor()
 elif actor_type == 'tabular_q':
-    agent = actor.TabularQActor(environment_train, environment_test,num_episodes=5000)
+    agent = actor.TabularQActor(environment_train, environment_test,num_episodes=1000, anim=True)
     agent.train()
 elif actor_type == 'SMA':
     agent = actor.SimpleMovingAverageActor()
@@ -60,5 +60,5 @@ while not terminated:
 print(f'Total reward for actor {actor_type}: {aggregate_reward}')
 print(f'Reward per year for actor {actor_type}: {aggregate_reward / 2}') # devide by 3 if run on the train set
 print(average_filled/amount_of_days)
-print(agent.Q)
+#print(agent.Q)
 print(np.shape(agent.Q))
