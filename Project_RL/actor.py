@@ -1,6 +1,12 @@
 import typing
 import numpy as np
 import random
+import matplotlib.pyplot as plt
+from collections import deque
+from matplotlib.cm import get_cmap
+from mpl_toolkits.mplot3d import Axes3D
+
+
 
 class Actor():
     def __init__ (self):
@@ -146,7 +152,7 @@ class SimpleMovingAverageActor(Actor):
 
 class TabularQActor(Actor):
     def __init__(self, environment_train, environment_test, amount_of_prices: int=161, threshold: float=0.1, alpha=0.005, gamma=0.9, starting_epsilon=1, epsilon_decay_rate=0.9995,
-                min_epsilon=0.1, num_episodes=5000):
+                min_epsilon=0.1, num_episodes=5000, anim=False):
         # Parameters
         self.alpha = alpha
         self.gamma = gamma
@@ -174,6 +180,217 @@ class TabularQActor(Actor):
         self.amount_of_prices = amount_of_prices
         #Deviation from average price to trigger buy sell action
         self.threshold = threshold
+        self.anim = anim
+        if self.anim:
+            self.fig, self.ax1 = plt.subplots(figsize=(12, 6))  # Standard height
+            self.time_labels = [h + 1 for h in range(24)]
+            self.plot_prices = deque([0] * 24, maxlen=24)  # Prices for the last 24 hours
+            self.plot_storages = deque([0] * 24, maxlen=24)  # Storage levels for the last 24 hours
+            self.plot_actions = deque([0] * 24, maxlen=24)  # Actions for the last 24 hours
+            self.plot_hours = deque(range(24), maxlen=24)  # Always keep 0-23 for the hours
+            self.running_average_plot = deque([0] * 24, maxlen=24)  # Running average data
+            # self.next_plot_hour = 1
+
+    def visualize_trajectory(self, price, hour, day, storage, action, running_average):
+        """
+        Visualize data dynamically by displaying graphs frame by frame.
+
+        Parameters:
+            price (float): Price at the given hour.
+            hour (int): Current hour.
+            day (int): Day number.
+            storage (float): Storage level at the given hour.
+            action (float): Action taken at the given hour.
+            running_average (float): Running average of prices.
+            Q_vals (tensor): Placeholder for additional graph data.
+        """
+        hour = int(hour)
+        # Update the last 24 hours of data
+        self.plot_prices[hour - 1] = price
+        self.plot_storages[hour - 1] = storage
+        self.plot_actions[hour - 1] = action
+        self.running_average_plot[hour - 1] = running_average
+
+        # Clear axes for redraw
+        self.ax1.cla()
+
+        # Bar chart for storage levels
+        self.ax1.bar(range(len(self.plot_storages)), self.plot_storages, color="orange", alpha=0.6, label="Storage Level")
+
+        # Arrows for actions
+        action_colors = {
+            -1: 'darkred',
+            -0.5: 'magenta',
+            0: 'purple',
+            0.5: 'darkblue',
+            1: 'darkgreen'
+        }
+        action_labels = {
+            -1: "Sell: -1",
+            -0.5: "Sell: -0.5",
+            0: "No Action",
+            0.5: "Buy: 0.5",
+            1: "Buy: 1"
+        }
+
+        # Add dummy plots for action labels
+        for a, color in action_colors.items():
+            self.ax1.hlines(0, 0, 0, colors=color, linewidth=4, label=action_labels[a])
+
+        for i, (s, a) in enumerate(zip(self.plot_storages, self.plot_actions)):
+            if a == 0:
+                self.ax1.hlines(s, i - 0.4, i + 0.4, colors=action_colors[a], linewidth=4)
+            elif a in action_colors:
+                self.ax1.arrow(i, s, 0, 10 * a, color=action_colors[a], head_width=0.2, head_length=2, length_includes_head=True, linewidth=2)
+
+        # Plot prices
+        self.ax1.plot(range(len(self.plot_prices)), self.plot_prices, 'o', markerfacecolor="white", markeredgecolor="black", markeredgewidth=2, label="Price")
+
+        # Plot running average
+        self.ax1.plot(range(len(self.running_average_plot)), self.running_average_plot, '--', color="black", label="Running Average")
+
+        # Title
+        self.ax1.set_title(f"Tabular Q learning trajectory, day: {int(day)}")
+
+        # Labels
+        self.ax1.set_xlabel("Time (hours)")
+        self.ax1.set_xticks(range(len(self.time_labels)))
+        self.ax1.set_xticklabels(self.time_labels, rotation=60, ha="right", fontsize=9)
+
+        # Combine legends
+        handles, labels = self.ax1.get_legend_handles_labels()
+        self.fig.legend(handles, labels, loc="lower center", bbox_to_anchor=(0.5, 0.019), ncol=4, frameon=True)
+
+        # Adjust layout and display the graph
+        plt.tight_layout()
+        plt.subplots_adjust(bottom=0.21)  # Add space at the bottom for the legend
+        plt.pause(0.2)
+
+
+
+    def visualize_q_values(self, color_mapping_dim: str):
+        """
+        Visualizes the Q-values tensor in a 3D plot.
+
+        :param color_mapping_dim: The dimension to be represented by color. Must be one of 'storage_bins' or 'actions'.
+        """
+        # Dimension mapping
+        dims = {
+            'price_bins': 0,
+            'hours': 1,
+            'storage_bins': 2,
+            'actions': 3
+        }
+
+        action_labels = {
+            0: "Sell: -1", 
+            1: "Sell: -0.5", 
+            2: "No Action", 
+            3: "Buy: 0.5", 
+            4: "Buy: 1" 
+        }
+
+        storage_labels = { 
+            0: "0 to 30", 
+            1: "30 to 60", 
+            2: "60 to 90", 
+            3: "90 to 120", 
+            4: "120 and up" 
+        }
+
+        if color_mapping_dim not in ['storage_bins', 'actions']:
+            raise ValueError("color_mapping_dim must be one of 'storage_bins' or 'actions'")
+
+        color_dim_index = dims[color_mapping_dim]
+        other_dim = 'storage_bins' if color_mapping_dim == 'actions' else 'actions'
+        other_dim_index = dims[other_dim]
+
+        # Get the range of values for the color dimension
+        color_bins = self.Q.shape[color_dim_index]
+        other_bins = self.Q.shape[other_dim_index]
+
+        fig = plt.figure(figsize=(18, 12))  # Increased figure size for more spacing
+
+        # Set up a 2x3 grid for subplots (2 on the top row, 3 on the bottom row)
+        rows, cols = 2, 3
+        grid_positions = [(row, col) for row in range(rows) for col in range(cols)]
+
+        for other_bin in range(other_bins):
+            row, col = grid_positions[other_bin]
+            ax = fig.add_subplot(rows, cols, row * cols + col + 1, projection='3d')
+
+            # Store surfaces and their max/min values for sorting
+            surfaces = []
+
+            for color_bin in range(color_bins):
+                # Extract the corresponding slice
+                if color_mapping_dim == 'storage_bins':
+                    data_slice = self.Q[:, :, color_bin, other_bin]
+                else:
+                    data_slice = self.Q[:, :, other_bin, color_bin]
+
+                # Calculate the max value for sorting
+                max_value = np.max(data_slice)
+                min_value = np.min(data_slice)
+
+                # Store the data for sorting
+                surfaces.append((max_value, min_value, color_bin, data_slice))
+
+            # Sort surfaces by max/min values
+            surfaces.sort(key=lambda x: (x[0], x[1]))  # Sort by max, then min values
+
+            for _, _, color_bin, data_slice in surfaces:
+                # Create the mesh grid for price_bins and hours
+                price_bins, hours = np.meshgrid(
+                    np.arange(self.Q.shape[dims['price_bins']]),
+                    np.arange(self.Q.shape[dims['hours']])
+                )
+
+                # Normalize color mapping values
+                norm = plt.Normalize(vmin=0, vmax=color_bins - 1)
+                cmap = get_cmap('coolwarm')
+                color_value = norm(color_bin)
+
+                # Create facecolors as a 2D array matching the shape of data_slice
+                facecolors = np.empty(data_slice.T.shape + (4,), dtype=float)
+                facecolors[..., :] = cmap(color_value)
+
+                # Plot the surface with a zorder
+                ax.plot_surface(
+                    hours, price_bins, data_slice.T, facecolors=facecolors, shade=False, alpha=0.7, rstride=1, cstride=1
+                )
+
+            # Update the title to use descriptive labels
+            if other_dim == 'actions':
+                title_label = action_labels.get(other_bin, f'Action {other_bin}')
+            else:
+                title_label = storage_labels.get(other_bin, f'Storage {other_bin}')
+
+            ax.set_title(f'{other_dim.capitalize()} Bin: {title_label}', pad=20)  # Added padding for title
+            ax.set_xlabel('Hours')
+            ax.set_ylabel('Price Bins')
+            ax.set_zlabel('Q-Values')
+
+        # Add a legend in the empty grid position (last subplot)
+        legend_ax = fig.add_subplot(rows, cols, len(grid_positions))  # Last grid position
+        legend_ax.axis('off')  # Turn off axis for the legend box
+
+        # Create the color legend
+        norm = plt.Normalize(vmin=0, vmax=color_bins - 1)
+        sm = plt.cm.ScalarMappable(cmap=cmap, norm=norm)
+        sm.set_array([])
+
+        # Map color_bins to labels
+        labels = action_labels if color_mapping_dim == 'actions' else storage_labels
+        ticks = np.arange(color_bins)
+        cbar = fig.colorbar(sm, ax=legend_ax, orientation='vertical', fraction=0.025, pad=0.1, ticks=ticks)
+        cbar.ax.set_yticklabels([labels.get(i, f"{color_mapping_dim.capitalize()} {i}") for i in ticks])
+        cbar.set_label(f'{color_mapping_dim.capitalize()} Values', rotation=90, labelpad=10)
+
+        plt.subplots_adjust(wspace=0.4, hspace=0.4)  # Added space between subplots
+        plt.show()
+
+
 
     def updateAverage(self, newPrice:int, train=True):
         if train == True:
@@ -244,12 +461,18 @@ class TabularQActor(Actor):
                 best_next_action = np.argmax(self.Q[next_price_bin_index, next_hour_index, next_storage_index, :])
                 #print(f"Reward: {reward}, Best Next Q: {self.Q[next_price_bin_index, next_hour_index, next_storage_index, best_next_action]}")
                 self.Q[price_bin_index, hour_index, storage_index, action_idx] += self.alpha * (reward + self.gamma * self.Q[next_price_bin_index, next_hour_index, next_storage_index, best_next_action] - self.Q[price_bin_index, hour_index, storage_index, action_idx])
+                if self.anim and (30 <= day <= 31) and episode == 0: # and (day - 1) % 10 == 0 and int(hour) == self.next_plot_hour:
+                    self.visualize_trajectory(price, hour, day, storage, action, self.current_average)
+                    # self.next_plot_hour += 1
+                if t == self.max_steps - 1 and episode == 0:
+                    print(t, day)
 
                 #print(f"After Update: Q[{price_bin_index}, {hour_index}, {storage_index}, {action_idx}] = {self.Q[price_bin_index, hour_index, storage_index, action_idx]}")
                 #print(f'Epsilon: {self.epsilon}')
 
                 # Transition to next state
                 state = next_state
+            plt.close()
 
             # Update epsilon value
             self.epsilon = self.epsilon * self.epsilon_decay_rate
@@ -259,6 +482,8 @@ class TabularQActor(Actor):
             if episode % 100 == 0:
                 val_reward = self.val()
                 print(f'-- Finished training {episode} episodes, epsilon = {self.epsilon}, validation reward = {val_reward}...')
+        self.visualize_q_values('storage_bins')
+        self.visualize_q_values('actions')
         
     def act(self, state):
         storage, price, hour, _ = state
