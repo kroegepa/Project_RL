@@ -522,10 +522,12 @@ class TabularQActor(Actor):
         #print(f'current price = {price_difference}')
         #print(f'positive reward = {1* ((price_difference * -1) + (reward_parameter * ((120 - storage_level)/120)))}')
         #print(f'negative reward = {price_difference}')
-        if action <= 0:
+        if action < 0:
             return action * price_difference * -1
+        elif action == 0:
+            return 0.3
         else:
-            return action * ((price_difference * -1) + (reward_parameter * ((120 - storage_level)/120)))
+            return action * ((price_difference * -1) + (reward_parameter * (max(0,(140 - storage_level)/140))))
 
     def val(self):
         aggregate_reward = 0
