@@ -159,33 +159,46 @@ class TabularQActor(Actor):
         self.bins = [-1.00001, -0.75, -0.5, -0.25, 0, 0.5, 1, 1.5] # bins for price difference from average
         self.num_hours = 24
         self.actions = [-1, -0.5, 0, 0.5, 1]  # Discrete actions
-        self.max_steps = len(environment_train.timestamps)
+        self.max_steps = len(environment_train.timestamps) * 24 - 1
         self.storage_bins = [0, 30, 60, 90, 120]
         self.Q = np.zeros((len(self.bins), self.num_hours, len(self.storage_bins), len(self.actions)))
         self.environment_train = environment_train
         self.environment_test = environment_test
 
         self.current_average : float = 0
+        self.current_average_val : float = 0
         self.price_queue = []
+        self.price_queue_val = []
         #Amount of prices to be considered: 161 is optimal window
         #24 prices to a day
         self.amount_of_prices = amount_of_prices
         #Deviation from average price to trigger buy sell action
         self.threshold = threshold
 
-    def updateAverage(self, newPrice:int):
-        if len(self.price_queue) == self.amount_of_prices:
-            self.current_average -= self.price_queue[0]/self.amount_of_prices
-            self.current_average += newPrice/self.amount_of_prices
-            self.price_queue.pop(0)
-            self.price_queue.append(newPrice)
+    def updateAverage(self, newPrice:int, train=True):
+        if train == True:
+            if len(self.price_queue) == self.amount_of_prices:
+                self.current_average -= self.price_queue[0]/self.amount_of_prices
+                self.current_average += newPrice/self.amount_of_prices
+                self.price_queue.pop(0)
+                self.price_queue.append(newPrice)
+            else:
+                self.price_queue.append(newPrice)
+                self.current_average = sum(self.price_queue)/len(self.price_queue)
         else:
-            self.price_queue.append(newPrice)
-            self.current_average = sum(self.price_queue)/len(self.price_queue)
+            if len(self.price_queue_val) == self.amount_of_prices:
+                self.current_average_val -= self.price_queue_val[0]/self.amount_of_prices
+                self.current_average_val += newPrice/self.amount_of_prices
+                self.price_queue_val.pop(0)
+                self.price_queue_val.append(newPrice)
+            else:
+                self.price_queue_val.append(newPrice)
+                self.current_average_val = sum(self.price_queue_val)/len(self.price_queue_val)
 
     def train(self):
         print('Training the tabular Q-learning agent...')
         for episode in range(self.num_episodes):
+            print(f"Episode {episode}")
             state = self.environment_train.reset()
             for t in range(self.max_steps):
                 # Choose action using epsilon-greedy policy
@@ -195,17 +208,21 @@ class TabularQActor(Actor):
                 fraction = self.calculate_fraction(price)
                 #print(fraction)
                 self.updateAverage(price)
+                #print(f'Current average: {self.current_average}')
 
                 price_bin_index = np.digitize(fraction, self.bins) - 1
+                #print(f"Fraction: {fraction}, price bin: {price_bin_index}")
                 hour_index = int(hour-1)
                 storage_index = np.digitize(storage, self.storage_bins) - 1
                 if np.random.rand() < self.epsilon:
+                    #print("Explore")
                     action_idx = random.randrange(len(self.actions)) # Explore
                 else:
+                    #print("Exploit")
                     action_idx = np.argmax(self.Q[price_bin_index, hour_index, storage_index, :]) # Exploit
-
                 # Take action, observe reward and next state
                 action = self.actions[action_idx]
+                #print(f'Action: {action}')
 
 
                 next_state, reward, terminated = self.environment_train.step(action)
@@ -221,8 +238,15 @@ class TabularQActor(Actor):
                 #     pass
                 #     #self.Q[price_bin_index, hour_index, storage_index, action_idx] = -10000000
                 # else:
+
+                #print(f"Before Update: Q[{price_bin_index}, {hour_index}, {storage_index}, {action_idx}] = {self.Q[price_bin_index, hour_index, storage_index, action_idx]}")
+                
                 best_next_action = np.argmax(self.Q[next_price_bin_index, next_hour_index, next_storage_index, :])
+                #print(f"Reward: {reward}, Best Next Q: {self.Q[next_price_bin_index, next_hour_index, next_storage_index, best_next_action]}")
                 self.Q[price_bin_index, hour_index, storage_index, action_idx] += self.alpha * (reward + self.gamma * self.Q[next_price_bin_index, next_hour_index, next_storage_index, best_next_action] - self.Q[price_bin_index, hour_index, storage_index, action_idx])
+
+                #print(f"After Update: Q[{price_bin_index}, {hour_index}, {storage_index}, {action_idx}] = {self.Q[price_bin_index, hour_index, storage_index, action_idx]}")
+                #print(f'Epsilon: {self.epsilon}')
 
                 # Transition to next state
                 state = next_state
@@ -238,22 +262,36 @@ class TabularQActor(Actor):
         
     def act(self, state):
         storage, price, hour, _ = state
-        price_bin_index = np.digitize(price, self.bins) - 1
+        fraction = self.calculate_fraction(price, train=False)
+        self.updateAverage(price, train=False)
+        price_bin_index = np.digitize(fraction, self.bins) - 1
         hour_index = int(hour-1)
         storage_index = np.digitize(storage, self.storage_bins) - 1
+        #print(f"Price: {price}, fraction: {fraction}, current average: {self.current_average_val}, price bin: {price_bin_index}")
 
         # Select the best action (greedy policy)
+        #print(f"Q[{price_bin_index}, {hour_index}, {storage_index}, actions] = {self.Q[price_bin_index, hour_index, storage_index, :]}")
         best_action_index = np.argmax(self.Q[price_bin_index, hour_index, storage_index, :])
         best_action = self.actions[best_action_index]
+        #print(f"Best action index: {best_action_index}, action: {best_action}")
 
         return best_action
-    def calculate_fraction(self,price):
-        if self.current_average == 0:
-            fraction = 0
-        else:     
-            difference = price - self.current_average
-            fraction  = difference/self.current_average
-        return fraction
+    def calculate_fraction(self, price, train=True):
+        if train == True:
+            if self.current_average == 0:
+                fraction = 0
+            else:     
+                difference = price - self.current_average
+                fraction  = difference/self.current_average
+            return fraction
+        else:
+            if self.current_average_val == 0:
+                fraction = 0
+            else:
+                difference = price - self.current_average_val
+                fraction = difference/self.current_average_val
+            return fraction
+
     def calculate_reward(self,action,price_difference,storage_level,reward_parameter = 2.2):
 
         #print(f'current price = {price_difference}')
