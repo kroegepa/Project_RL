@@ -461,18 +461,12 @@ class TabularQActor(Actor):
                 best_next_action = np.argmax(self.Q[next_price_bin_index, next_hour_index, next_storage_index, :])
                 #print(f"Reward: {reward}, Best Next Q: {self.Q[next_price_bin_index, next_hour_index, next_storage_index, best_next_action]}")
                 self.Q[price_bin_index, hour_index, storage_index, action_idx] += self.alpha * (reward + self.gamma * self.Q[next_price_bin_index, next_hour_index, next_storage_index, best_next_action] - self.Q[price_bin_index, hour_index, storage_index, action_idx])
-                if self.anim and (30 <= day <= 31) and episode == 0: # and (day - 1) % 10 == 0 and int(hour) == self.next_plot_hour:
-                    self.visualize_trajectory(price, hour, day, storage, action, self.current_average)
-                    # self.next_plot_hour += 1
-                if t == self.max_steps - 1 and episode == 0:
-                    print(t, day)
 
                 #print(f"After Update: Q[{price_bin_index}, {hour_index}, {storage_index}, {action_idx}] = {self.Q[price_bin_index, hour_index, storage_index, action_idx]}")
                 #print(f'Epsilon: {self.epsilon}')
 
                 # Transition to next state
                 state = next_state
-            plt.close()
 
             # Update epsilon value
             self.epsilon = self.epsilon * self.epsilon_decay_rate
