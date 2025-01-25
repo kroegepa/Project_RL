@@ -154,8 +154,8 @@ class SimpleMovingAverageActor(Actor):
         
 
 class TabularQActor(Actor):
-    def __init__(self, environment_train, environment_test, amount_of_prices: int=161, threshold: float=0.1, alpha=0.005, gamma=0.9, starting_epsilon=1, epsilon_decay_rate=0.9995,
-                min_epsilon=0.1, num_episodes=5000):
+    def __init__(self, environment_train, environment_test, amount_of_prices: int=161, threshold: float=0.1, alpha=0.005, gamma=0.9, starting_epsilon=0.2, epsilon_decay_rate=0.9999,
+                min_epsilon=0.001, num_episodes=5000, profit_calculation_window=48, Q_init_value=0):
         # Parameters
         self.sell_times = 0
         self.alpha = alpha
@@ -166,12 +166,13 @@ class TabularQActor(Actor):
         self.num_episodes = num_episodes
         #self.num_bins_price = 21  # Discretization bins for price
         #self.bins = [0, 20, 40, 60, 80, 100]
-        self.bins = [-1.00001, -0.75, -0.5, -0.25, 0, 0.5, 1, 1.5] # bins for price difference from average
+        self.price_bins = [-1.00001, -0.75, -0.5, -0.25, 0, 0.5, 1, 1.5] # bins for price difference from average
         self.num_hours = 24
         self.actions = [-1, -0.5, 0, 0.5, 1]  # Discrete actions
         self.max_steps = len(environment_train.timestamps) * 24 - 1
         self.storage_bins = [0, 30, 60, 90, 120]
-        self.Q = np.zeros((len(self.bins), self.num_hours, len(self.storage_bins), len(self.actions)))
+        self.Q_init_value = Q_init_value
+        self.Q = np.full((len(self.price_bins), self.num_hours, len(self.storage_bins), len(self.actions)), self.Q_init_value)
         self.environment_train = environment_train
         self.environment_test = environment_test
 
@@ -179,6 +180,8 @@ class TabularQActor(Actor):
         self.current_moving_average_val : float = 0
         self.price_queue = []
         self.price_queue_val = []
+        self.last_purchases = []
+        self.profit_calculation_window = profit_calculation_window
         #Amount of prices to be considered: 161 is optimal window
         #24 prices to a day
         self.amount_of_prices = amount_of_prices
@@ -481,7 +484,7 @@ class TabularQActor(Actor):
                 self.updateAverage(price)
                 #print(f'Current average: {self.current_average}')
 
-                price_bin_index = np.digitize(fraction, self.bins) - 1
+                price_bin_index = np.digitize(fraction, self.price_bins) - 1
                 #print(f"Fraction: {fraction}, price bin: {price_bin_index}")
                 hour_index = int(hour-1)
                 if hour_index == 0:
@@ -497,16 +500,21 @@ class TabularQActor(Actor):
                 action = self.actions[action_idx]
                 if action < 0:
                     self.sell_times += 1
+                elif action > 0:
+                    self.last_purchases.append(price)
+                    if len(self.last_purchases) == self.profit_calculation_window + 1:
+                        self.last_purchases.pop(0)
+
                 #print(f'Action: {action}')
+                reward = self.calculate_reward(action,self.price_bins[price_bin_index],self.storage_bins[storage_index], price)
 
 
                 next_state, reward, terminated = self.environment_train.step(action)
                 next_storage, next_price, next_hour, _ = next_state
-                next_price_bin_index = np.digitize(next_price, self.bins) - 1
+                next_price_bin_index = np.digitize(next_price, self.price_bins) - 1
                 next_hour_index = int(next_hour-1)
                 next_storage_index = np.digitize(next_storage, self.storage_bins) - 1
 
-                reward = self.calculate_reward(action,self.bins[price_bin_index],self.storage_bins[storage_index])
                 #print(reward,action)
                 # Update Q-value
                 # if (14 > hour > 11 and storage < 80):
@@ -546,7 +554,7 @@ class TabularQActor(Actor):
         storage, price, hour, _ = state
         fraction = self.calculate_fraction(price, train=False)
         self.updateAverage(price, train=False)
-        price_bin_index = np.digitize(fraction, self.bins) - 1
+        price_bin_index = np.digitize(fraction, self.price_bins) - 1
         hour_index = int(hour-1)
         if hour_index == 0:
             self.sell_times = 0
@@ -559,6 +567,10 @@ class TabularQActor(Actor):
         best_action = self.actions[best_action_index]
         if best_action < 0:
             self.sell_times += 1
+        elif best_action > 0:
+            self.last_purchases.append(price)
+            if len(self.last_purchases) == self.profit_calculation_window + 1:
+                self.last_purchases.pop(0)
         #print(f"Best action index: {best_action_index}, action: {best_action}")
         return best_action
 
@@ -578,23 +590,30 @@ class TabularQActor(Actor):
                 fraction = difference/self.current_moving_average_val
             return fraction
 
-    def calculate_reward(self,action,price_difference,storage_level,reward_parameter = 4.2):
+    def calculate_reward(self,action,price_difference,storage_level,current_price,reward_parameter = 8):
 
         #print(f'current price = {price_difference}')
         #print(f'positive reward = {1* ((price_difference * -1) + (reward_parameter * ((120 - storage_level)/120)))}')
         #print(f'negative reward = {price_difference}')
 
-        if storage_level > 160 and action > 0:
-            return -10
-        elif action < 0:
-            if self.sell_times >= 2:
-                return -10
+        if action < 0: # Selling
+            """if self.sell_times > 2:
+                return -1"""
+            if len(self.last_purchases) == 0:
+                return action * price_difference * -0.8
             else:
-                return action * price_difference * -1
-        elif action == 0:
+                most_expensive_purchase = max(self.last_purchases)
+                potential_profit = ((current_price * 0.8) - most_expensive_purchase) / most_expensive_purchase if most_expensive_purchase != 0 else 0
+                return action * potential_profit * -1
+        
+        elif action == 0: # Do nothing
             return 0.3
-        else:
-            return action * ((price_difference * -1) + (reward_parameter * (max(0,(120 - storage_level)/120))))
+        
+        elif action > 0: # Buying
+            if storage_level > 160:
+                return -1
+            else:
+                return action * ((price_difference * -1) + (reward_parameter * (max(0,(140 - storage_level)/140))))
 
     def val(self):
         aggregate_reward = 0
@@ -610,9 +629,9 @@ class TabularQActor(Actor):
             state = next_state
             storage, price, hour, day = state
             fraction = self.calculate_fraction(price)
-            price_bin_index = np.digitize(fraction, self.bins) - 1
+            price_bin_index = np.digitize(fraction, self.price_bins) - 1
             storage_index = np.digitize(storage, self.storage_bins) - 1
 
-            aggregate_reward += self.calculate_reward(action,self.bins[price_bin_index],self.storage_bins[storage_index])
+            aggregate_reward += self.calculate_reward(action,self.price_bins[price_bin_index],self.storage_bins[storage_index],price)
 
         return aggregate_reward

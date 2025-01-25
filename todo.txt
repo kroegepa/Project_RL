@@ -1,0 +1,25 @@
+because he said that every state has to be visited at least once, we need to do something about the storage states
+
+implement tomorrow:
+ - storage bins will be a proportion of max possible value at that time, eg: hour 1: (max possible value: 50, because you can carry over 50 max),
+   so its value would be: current_storage / 50. generalized equation: current_storage / max_storage
+ - i also want to redo the price calculation, where it is based on both ema and sma:
+     - total calculation, based on some hyperparameter alpha: sma * alpha + ema * (1 - alpha)
+     - ema calculation:
+         - it is the exponential moving average you already used, but where: (current_price * 0.8) / ema
+     - sma calculation:
+         - same thing, use sma calculation, where: (current_price * 0.8) / sma
+     - this should result in price bins where values over 1 are sell worthy (but i might set the highest bin at 1.2 or something to ensure profit),
+       and where values under 1 signify cheapness. this should be better as it takes into account both long term price diffs (ema) and short term price diffs (sma)
+ - i also want to remove some states, as i don't think they are necessary.
+     - we only need 4 actions (as we can max sell 6 out of 24 hours, making that action one fourth relevant, 6/24 == 1/4):
+         - definitely sell
+         - do nothing
+         - maybe buy
+         - definitely buy
+     - consequently, we only need 4 prices:
+         - definitely sell, meaning super expensive
+         - do nothing, meaning boring price
+         - maybe buy, meaning annoying price
+         - definitely buy, meaning great price
+ - you also need to experiment with the hight init of Q values. the states should all be explored, so it shouldn't matter how high you start, but you need to see.

@@ -24,7 +24,7 @@ terminated = False
 if actor_type == 'uniform_baseline':
     agent = actor.UniformBuyActor()
 elif actor_type == 'tabular_q':
-    agent = actor.TabularQActor(environment_train, environment_test,num_episodes=21, epsilon_decay_rate=0.995)
+    agent = actor.TabularQActor(environment_train, environment_test,num_episodes=201)
     agent.train()
 elif actor_type == 'SMA':
     agent = actor.SimpleMovingAverageActor()
@@ -44,9 +44,9 @@ with open("tab_q_val_trajectory.csv", "w") as file:
         if actor_type == 'tabular_q':
             storage,price,hour,day = state
             fraction = agent.calculate_fraction(price)
-            price_bin_index = np.digitize(fraction, agent.bins) - 1
+            price_bin_index = np.digitize(fraction, agent.price_bins) - 1
             storage_index = np.digitize(storage, agent.storage_bins) - 1
-            plotting_reward = agent.calculate_reward(action,agent.bins[price_bin_index],agent.storage_bins[storage_index])
+            plotting_reward = agent.calculate_reward(action,agent.price_bins[price_bin_index],agent.storage_bins[storage_index],price)
             writer.writerow([price, hour, day, storage, action, agent.current_moving_average_val, plotting_reward])
         #action = np.random.uniform(-1, 1)
         # next_state is given as: [storage_level, price, hour, day]
@@ -63,10 +63,10 @@ with open("tab_q_val_trajectory.csv", "w") as file:
             print("Reward:", reward)
             if actor_type == 'tabular_q':
                 fraction = agent.calculate_fraction(price)
-                price_bin_index = np.digitize(fraction, agent.bins) - 1
+                price_bin_index = np.digitize(fraction, agent.price_bins) - 1
                 storage_index = np.digitize(storage, agent.storage_bins) - 1
-                actor_reward_negative = agent.calculate_reward(-1,agent.bins[price_bin_index],agent.storage_bins[storage_index])
-                actor_reward_positve = agent.calculate_reward(1,agent.bins[price_bin_index],agent.storage_bins[storage_index])
+                actor_reward_negative = agent.calculate_reward(-1,agent.price_bins[price_bin_index],agent.storage_bins[storage_index])
+                actor_reward_positve = agent.calculate_reward(1,agent.price_bins[price_bin_index],agent.storage_bins[storage_index])
                 print("Agent reward negative:", actor_reward_negative)
                 print("Agent reward postive:", actor_reward_positve)
 print(f'Total reward for actor {actor_type}: {round(aggregate_reward):,}')
