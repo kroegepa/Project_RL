@@ -5,6 +5,9 @@ import matplotlib.pyplot as plt
 from collections import deque
 from matplotlib.cm import get_cmap
 from mpl_toolkits.mplot3d import Axes3D
+import inflect
+o_suffix = inflect.engine()
+import csv
 
 
 
@@ -152,7 +155,7 @@ class SimpleMovingAverageActor(Actor):
 
 class TabularQActor(Actor):
     def __init__(self, environment_train, environment_test, amount_of_prices: int=161, threshold: float=0.1, alpha=0.005, gamma=0.9, starting_epsilon=1, epsilon_decay_rate=0.9995,
-                min_epsilon=0.1, num_episodes=5000, anim=False):
+                min_epsilon=0.1, num_episodes=5000):
         # Parameters
         self.alpha = alpha
         self.gamma = gamma
@@ -171,8 +174,8 @@ class TabularQActor(Actor):
         self.environment_train = environment_train
         self.environment_test = environment_test
 
-        self.current_average : float = 0
-        self.current_average_val : float = 0
+        self.current_moving_average : float = 0
+        self.current_moving_average_val : float = 0
         self.price_queue = []
         self.price_queue_val = []
         #Amount of prices to be considered: 161 is optimal window
@@ -180,18 +183,63 @@ class TabularQActor(Actor):
         self.amount_of_prices = amount_of_prices
         #Deviation from average price to trigger buy sell action
         self.threshold = threshold
-        self.anim = anim
-        if self.anim:
-            self.fig, self.ax1 = plt.subplots(figsize=(12, 6))  # Standard height
+
+    def visualize_trajectory(self, states, from_indx_, to_indx_, nmbr_days_in_fig=3, animate=False, spam_protection=True):
+        end = to_indx_ if to_indx_ is None else to_indx_*24
+        window = states[from_indx_*24:end]
+        if spam_protection:
+            if animate:
+                window = window[-2*24:]
+            else:
+                window = window[-6*24:]
+        
+        if animate:
+            print("This code broke when the reward plot was added and will not be fixed unless necessary.")
+            """self.fig, self.ax1 = plt.subplots(figsize=(12, 6))  # Standard height
+            self.ax2 = self.ax1.twinx()
             self.time_labels = [h + 1 for h in range(24)]
             self.plot_prices = deque([0] * 24, maxlen=24)  # Prices for the last 24 hours
             self.plot_storages = deque([0] * 24, maxlen=24)  # Storage levels for the last 24 hours
             self.plot_actions = deque([0] * 24, maxlen=24)  # Actions for the last 24 hours
             self.plot_hours = deque(range(24), maxlen=24)  # Always keep 0-23 for the hours
             self.running_average_plot = deque([0] * 24, maxlen=24)  # Running average data
-            # self.next_plot_hour = 1
+            self.reward_plot = deque([0] * 24, maxlen=24)
+            for state in window:
+                price, hour, day, storage, action, running_average, reward_plot = state
+                hour = int(hour)
 
-    def visualize_trajectory(self, price, hour, day, storage, action, running_average):
+                # Update the last 24 hours of data
+                self.plot_prices[hour - 1] = price
+                self.plot_storages[hour - 1] = storage
+                self.plot_actions[hour - 1] = action
+                self.running_average_plot[hour - 1] = running_average
+                self.reward_plot[hour - 1] = reward_plot
+
+                # Clear axes for redraw
+                self.ax1.cla()
+                message = f": {int(day)}"
+                self.trajectory_plotter(message, (0.5, 0.02), 0.22)
+                plt.pause(0.2)"""
+
+        else:
+            for first_state in range(0, len(window), nmbr_days_in_fig*24):
+                # Update the last 24 hours of data
+                self.fig, self.ax1 = plt.subplots(figsize=(nmbr_days_in_fig*6, 10))
+                self.ax2 = self.ax1.twinx()
+                self.plot_prices, hours, days, self.plot_storages, self.plot_actions, self.running_average_plot, self.reward_plot = list(zip(*window[first_state:first_state+nmbr_days_in_fig*24]))
+
+                self.time_labels = []
+                for hour, day in zip(hours, days):
+                    if int(hour) == 24:
+                        self.time_labels.append(f"{o_suffix.ordinal(int(day)+1)} day")
+                    else:
+                        self.time_labels.append(str(int(hour)))
+
+                message = f"s: {int(days[0])} to {int(days[-1])}"
+                self.trajectory_plotter(message, (0.5, 0.018), 0.2)
+            plt.show()
+
+    def trajectory_plotter(self, message, bbox_to_anchor, bottom_space):
         """
         Visualize data dynamically by displaying graphs frame by frame.
 
@@ -204,16 +252,6 @@ class TabularQActor(Actor):
             running_average (float): Running average of prices.
             Q_vals (tensor): Placeholder for additional graph data.
         """
-        hour = int(hour)
-        # Update the last 24 hours of data
-        self.plot_prices[hour - 1] = price
-        self.plot_storages[hour - 1] = storage
-        self.plot_actions[hour - 1] = action
-        self.running_average_plot[hour - 1] = running_average
-
-        # Clear axes for redraw
-        self.ax1.cla()
-
         # Bar chart for storage levels
         self.ax1.bar(range(len(self.plot_storages)), self.plot_storages, color="orange", alpha=0.6, label="Storage Level")
 
@@ -222,8 +260,8 @@ class TabularQActor(Actor):
             -1: 'darkred',
             -0.5: 'magenta',
             0: 'purple',
-            0.5: 'darkblue',
-            1: 'darkgreen'
+            0.5: 'teal',
+            1: 'darkblue'
         }
         action_labels = {
             -1: "Sell: -1",
@@ -249,22 +287,30 @@ class TabularQActor(Actor):
         # Plot running average
         self.ax1.plot(range(len(self.running_average_plot)), self.running_average_plot, '--', color="black", label="Running Average")
 
+        self.ax2.plot(range(len(self.reward_plot)), self.reward_plot, '-', color='green', label='Reward')
+
         # Title
-        self.ax1.set_title(f"Tabular Q learning trajectory, day: {int(day)}")
+        self.ax1.set_title(f"Tabular Q learning trajectory, day{message}")
 
         # Labels
         self.ax1.set_xlabel("Time (hours)")
+        self.ax1.set_ylabel("Price & Storage Level")
+        self.ax2.set_ylabel("Reward")
         self.ax1.set_xticks(range(len(self.time_labels)))
         self.ax1.set_xticklabels(self.time_labels, rotation=60, ha="right", fontsize=9)
 
         # Combine legends
-        handles, labels = self.ax1.get_legend_handles_labels()
-        self.fig.legend(handles, labels, loc="lower center", bbox_to_anchor=(0.5, 0.019), ncol=4, frameon=True)
+        handles_ax1, labels_ax1 = self.ax1.get_legend_handles_labels()
+        handles_ax2, labels_ax2 = self.ax2.get_legend_handles_labels()
+
+        handles = handles_ax1 + handles_ax2
+        labels = labels_ax1 + labels_ax2
+
+        self.fig.legend(handles, labels, loc="lower center", bbox_to_anchor=bbox_to_anchor, ncol=len(labels), frameon=True)
 
         # Adjust layout and display the graph
         plt.tight_layout()
-        plt.subplots_adjust(bottom=0.21)  # Add space at the bottom for the legend
-        plt.pause(0.2)
+        plt.subplots_adjust(bottom=bottom_space)  # Add space at the bottom for the legend
 
 
 
@@ -390,32 +436,39 @@ class TabularQActor(Actor):
         plt.subplots_adjust(wspace=0.4, hspace=0.4)  # Added space between subplots
         plt.show()
 
-
+    def plot_rewards_during_training(self, reward_list):
+        plt.figure(figsize=(12, 6))
+        plt.plot(range(len(reward_list)), reward_list, "-", color="blue")
+        plt.title("Validation Reward per Episode of Training")
+        plt.xlabel("Episodes")
+        plt.ylabel("Validation Reward")
+        plt.show()
 
     def updateAverage(self, newPrice:int, train=True):
         if train == True:
             if len(self.price_queue) == self.amount_of_prices:
-                self.current_average -= self.price_queue[0]/self.amount_of_prices
-                self.current_average += newPrice/self.amount_of_prices
+                self.current_moving_average -= self.price_queue[0]/self.amount_of_prices
+                self.current_moving_average += newPrice/self.amount_of_prices
                 self.price_queue.pop(0)
                 self.price_queue.append(newPrice)
             else:
                 self.price_queue.append(newPrice)
-                self.current_average = sum(self.price_queue)/len(self.price_queue)
+                self.current_moving_average = sum(self.price_queue)/len(self.price_queue)
         else:
             if len(self.price_queue_val) == self.amount_of_prices:
-                self.current_average_val -= self.price_queue_val[0]/self.amount_of_prices
-                self.current_average_val += newPrice/self.amount_of_prices
+                self.current_moving_average_val -= self.price_queue_val[0]/self.amount_of_prices
+                self.current_moving_average_val += newPrice/self.amount_of_prices
                 self.price_queue_val.pop(0)
                 self.price_queue_val.append(newPrice)
             else:
                 self.price_queue_val.append(newPrice)
-                self.current_average_val = sum(self.price_queue_val)/len(self.price_queue_val)
+                self.current_moving_average_val = sum(self.price_queue_val)/len(self.price_queue_val)
 
     def train(self):
         print('Training the tabular Q-learning agent...')
+        validation_rewards = []
         for episode in range(self.num_episodes):
-            print(f"Episode {episode}")
+            #print(f"Episode {episode}")
             state = self.environment_train.reset()
             for t in range(self.max_steps):
                 # Choose action using epsilon-greedy policy
@@ -473,9 +526,14 @@ class TabularQActor(Actor):
             if self.epsilon < self.min_epsilon:
                 self.epsilon = self.min_epsilon
             
-            if episode % 100 == 0:
-                val_reward = self.val()
-                print(f'-- Finished training {episode} episodes, epsilon = {self.epsilon}, validation reward = {val_reward}...')
+            validation_rewards.append(self.val())
+            if episode % 10 == 0:
+                print(f'-- Finished training {episode} episodes, epsilon = {round(self.epsilon, 4)}, validation reward = {round(validation_rewards[-1], 1):,}...')
+        with open("tab_q_val_rewards.csv", "w") as f:
+            writer = csv.writer(f)
+            writer.writerow(["Validation Rewards"])
+            for row in validation_rewards:
+                writer.writerow([row])
         self.visualize_q_values('storage_bins')
         self.visualize_q_values('actions')
         
@@ -493,22 +551,22 @@ class TabularQActor(Actor):
         best_action_index = np.argmax(self.Q[price_bin_index, hour_index, storage_index, :])
         best_action = self.actions[best_action_index]
         #print(f"Best action index: {best_action_index}, action: {best_action}")
-
         return best_action
+
     def calculate_fraction(self, price, train=True):
         if train == True:
-            if self.current_average == 0:
+            if self.current_moving_average == 0:
                 fraction = 0
             else:     
-                difference = price - self.current_average
-                fraction  = difference/self.current_average
+                difference = price - self.current_moving_average
+                fraction  = difference/self.current_moving_average
             return fraction
         else:
-            if self.current_average_val == 0:
+            if self.current_moving_average_val == 0:
                 fraction = 0
             else:
-                difference = price - self.current_average_val
-                fraction = difference/self.current_average_val
+                difference = price - self.current_moving_average_val
+                fraction = difference/self.current_moving_average_val
             return fraction
 
     def calculate_reward(self,action,price_difference,storage_level,reward_parameter = 2.2):
