@@ -166,7 +166,7 @@ class TabularQActor(Actor):
         self.num_episodes = num_episodes
         #self.num_bins_price = 21  # Discretization bins for price
         #self.bins = [0, 20, 40, 60, 80, 100]
-        self.bins = [-1.00001, -0.75, -0.5, -0.25, 0, 0.5, 1, 1.5] # bins for price difference from average
+        self.bins = [-1.00001, -0.75, -0.5, -0.25, 0, 0.25, 0.5, 1] # bins for price difference from average
         self.num_hours = 24
         self.actions = [-1, -0.5, 0, 0.5, 1]  # Discrete actions
         self.max_steps = len(environment_train.timestamps) * 24 - 1
@@ -502,7 +502,8 @@ class TabularQActor(Actor):
 
                 next_state, reward, terminated = self.environment_train.step(action)
                 next_storage, next_price, next_hour, _ = next_state
-                next_price_bin_index = np.digitize(next_price, self.bins) - 1
+                next_fraction = self.calculate_fraction(next_price)
+                next_price_bin_index = np.digitize(next_fraction, self.bins) - 1
                 next_hour_index = int(next_hour-1)
                 next_storage_index = np.digitize(next_storage, self.storage_bins) - 1
 
@@ -584,17 +585,20 @@ class TabularQActor(Actor):
         #print(f'positive reward = {1* ((price_difference * -1) + (reward_parameter * ((120 - storage_level)/120)))}')
         #print(f'negative reward = {price_difference}')
 
-        if storage_level > 160 and action > 0:
-            return -10
-        elif action < 0:
+            
+        if action < 0: # sell
             if self.sell_times >= 2:
                 return -10
             else:
-                return action * price_difference * -1
-        elif action == 0:
+                return action * (price_difference - 0.2)* -1
+        
+        elif action == 0: # do nothing
             return 0.3
-        else:
-            return action * ((price_difference * -1) + (reward_parameter * (max(0,(120 - storage_level)/120))))
+        
+        elif action > 0: # buy
+            if storage_level > 160:
+                return -10
+            return action * ((price_difference * -1) + (reward_parameter * (max(0,(130 - storage_level)/130))))
 
     def val(self):
         aggregate_reward = 0
