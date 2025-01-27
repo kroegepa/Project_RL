@@ -468,6 +468,7 @@ class TabularQActor(Actor):
     def train(self):
         print('Training the tabular Q-learning agent...')
         validation_rewards = []
+        external_rewards = []
         for episode in range(self.num_episodes):
             #print(f"Episode {episode}")
             state = self.environment_train.reset()
@@ -532,14 +533,18 @@ class TabularQActor(Actor):
             if self.epsilon < self.min_epsilon:
                 self.epsilon = self.min_epsilon
             
-            validation_rewards.append(self.val())
+            val_r = self.val()
+            validation_rewards.append(val_r[0])
+            external_rewards.append(val_r[1])
             if episode % 10 == 0:
-                print(f'-- Finished training {episode} episodes, epsilon = {round(self.epsilon, 4)}, validation reward = {round(validation_rewards[-1], 1):,}...')
+                print(f'-- Finished training {episode} episodes, epsilon = {round(self.epsilon, 4)}\n' \
+                      f'internal validation reward = {round(validation_rewards[-1], 1):,}\n' \
+                      f'external validation reward = {round(external_rewards[-1], 1):,}')
         with open("tab_q_val_rewards.csv", "w") as f:
             writer = csv.writer(f)
-            writer.writerow(["Validation Rewards"])
-            for row in validation_rewards:
-                writer.writerow([row])
+            writer.writerow(["Validation Rewards", "External Rewards"])
+            for internal, external in zip(validation_rewards, external_rewards):
+                writer.writerow([internal, external])
         self.visualize_q_values('storage_bins')
         self.visualize_q_values('actions')
         
@@ -602,6 +607,7 @@ class TabularQActor(Actor):
 
     def val(self):
         aggregate_reward = 0
+        aggregate_test_reward = 0
         terminated = False
         state = self.environment_test.reset()
 
@@ -618,5 +624,6 @@ class TabularQActor(Actor):
             storage_index = np.digitize(storage, self.storage_bins) - 1
 
             aggregate_reward += self.calculate_reward(action,self.bins[price_bin_index],self.storage_bins[storage_index])
+            aggregate_test_reward += reward
 
-        return aggregate_reward
+        return aggregate_reward, aggregate_test_reward
