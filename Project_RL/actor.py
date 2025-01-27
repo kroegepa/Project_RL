@@ -592,17 +592,17 @@ class TabularQActor(Actor):
 
             
         if action < 0: # sell
-            if self.sell_times >= 2:
+            if self.sell_times >= 4:
                 return -10
             else:
                 return action * (price_difference - 0.2)* -1
         
         elif action == 0: # do nothing
-            return 0.3
+            return 0
         
         elif action > 0: # buy
             if storage_level > 160:
-                return -10
+                return -100
             return action * ((price_difference * -1) + (reward_parameter * (max(0,(130 - storage_level)/130))))
 
     def val(self):
