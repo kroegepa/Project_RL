@@ -517,7 +517,7 @@ class TabularQActor(Actor):
                 fraction = difference/self.current_average_val
             return fraction
 
-    def calculate_reward(self,action,price_difference,storage_level,reward_parameter = 2.2):
+    def calculate_reward(self,action,price_difference,storage_level,reward_parameter = 4.2):
 
         #print(f'current price = {price_difference}')
         #print(f'positive reward = {1* ((price_difference * -1) + (reward_parameter * ((120 - storage_level)/120)))}')
