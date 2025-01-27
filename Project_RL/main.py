@@ -24,7 +24,7 @@ terminated = False
 if actor_type == 'uniform_baseline':
     agent = actor.UniformBuyActor()
 elif actor_type == 'tabular_q':
-    agent = actor.TabularQActor(environment_train, environment_test,num_episodes=201)
+    agent = actor.TabularQActor(environment_train, environment_test,num_episodes=1001)
     agent.train()
 elif actor_type == 'SMA':
     agent = actor.SimpleMovingAverageActor()
@@ -41,16 +41,16 @@ with open("tab_q_val_trajectory.csv", "w") as file:
     while not terminated:
         # agent is your own imported agent class
         action = agent.act(state)
+        next_state, reward, terminated = environment_test.step(action)
         if actor_type == 'tabular_q':
             storage,price,hour,day = state
-            fraction = agent.calculate_fraction(price)
+            fraction = agent.calculate_fraction(hour, price)
             price_bin_index = np.digitize(fraction, agent.price_bins) - 1
-            storage_index = np.digitize(storage, agent.storage_bins) - 1
-            plotting_reward = agent.calculate_reward(action,agent.price_bins[price_bin_index],agent.storage_bins[storage_index],price)
-            writer.writerow([price, hour, day, storage, action, agent.current_moving_average_val, plotting_reward])
+            storage_index = np.digitize(storage, agent.storage_dist2buy_bins) - 1
+            plotting_reward = agent.calculate_reward(reward, action,agent.price_bins[price_bin_index],agent.storage_dist2buy_bins[storage_index],price)
+            writer.writerow([price, hour, day, storage, action, agent.sma_val, plotting_reward])
         #action = np.random.uniform(-1, 1)
         # next_state is given as: [storage_level, price, hour, day]
-        next_state, reward, terminated = environment_test.step(action)
         state = next_state
         aggregate_reward += reward
         storage,price,hour,day = state
@@ -64,9 +64,9 @@ with open("tab_q_val_trajectory.csv", "w") as file:
             if actor_type == 'tabular_q':
                 fraction = agent.calculate_fraction(price)
                 price_bin_index = np.digitize(fraction, agent.price_bins) - 1
-                storage_index = np.digitize(storage, agent.storage_bins) - 1
-                actor_reward_negative = agent.calculate_reward(-1,agent.price_bins[price_bin_index],agent.storage_bins[storage_index])
-                actor_reward_positve = agent.calculate_reward(1,agent.price_bins[price_bin_index],agent.storage_bins[storage_index])
+                storage_index = np.digitize(storage, agent.storage_dist2buy_bins) - 1
+                actor_reward_negative = agent.calculate_reward(-1,agent.price_bins[price_bin_index],agent.storage_dist2buy_bins[storage_index])
+                actor_reward_positve = agent.calculate_reward(1,agent.price_bins[price_bin_index],agent.storage_dist2buy_bins[storage_index])
                 print("Agent reward negative:", actor_reward_negative)
                 print("Agent reward postive:", actor_reward_positve)
 print(f'Total reward for actor {actor_type}: {round(aggregate_reward):,}')

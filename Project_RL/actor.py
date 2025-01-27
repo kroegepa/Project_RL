@@ -154,8 +154,11 @@ class SimpleMovingAverageActor(Actor):
         
 
 class TabularQActor(Actor):
-    def __init__(self, environment_train, environment_test, amount_of_prices: int=161, threshold: float=0.1, alpha=0.005, gamma=0.9, starting_epsilon=0.2, epsilon_decay_rate=0.9999,
-                min_epsilon=0.001, num_episodes=5000, profit_calculation_window=48, Q_init_value=0):
+    def __init__(self, environment_train, environment_test,
+                 amount_of_prices: int=161, threshold: float=0.1, alpha=0.005,
+                 gamma=0.9, starting_epsilon=0.2, epsilon_decay_rate=0.9999,
+                 min_epsilon=0.001, num_episodes=5000,
+                 profit_calculation_window=48, Q_init_value=10**3):
         # Parameters
         self.sell_times = 0
         self.alpha = alpha
@@ -166,18 +169,22 @@ class TabularQActor(Actor):
         self.num_episodes = num_episodes
         #self.num_bins_price = 21  # Discretization bins for price
         #self.bins = [0, 20, 40, 60, 80, 100]
-        self.price_bins = [-1.00001, -0.75, -0.5, -0.25, 0, 0.5, 1, 1.5] # bins for price difference from average
+        self.price_bins = [0, 0.65, 1, 1.4] # bins for price difference from average
         self.num_hours = 24
-        self.actions = [-1, -0.5, 0, 0.5, 1]  # Discrete actions
+        self.actions = [-1, 0, 0.5, 1]  # Discrete actions
         self.max_steps = len(environment_train.timestamps) * 24 - 1
-        self.storage_bins = [0, 30, 60, 90, 120]
+        self.storage_dist2buy_bins = [0, 6, 12, 14]
         self.Q_init_value = Q_init_value
-        self.Q = np.full((len(self.price_bins), self.num_hours, len(self.storage_bins), len(self.actions)), self.Q_init_value)
+        self.Q = np.full((len(self.price_bins),
+                          self.num_hours,
+                          len(self.storage_dist2buy_bins),
+                          len(self.actions)),
+                          self.Q_init_value)
         self.environment_train = environment_train
         self.environment_test = environment_test
 
-        self.current_moving_average : float = 0
-        self.current_moving_average_val : float = 0
+        self.sma : float = 0
+        self.sma_val : float = 0
         self.price_queue = []
         self.price_queue_val = []
         self.last_purchases = []
@@ -187,8 +194,14 @@ class TabularQActor(Actor):
         self.amount_of_prices = amount_of_prices
         #Deviation from average price to trigger buy sell action
         self.threshold = threshold
+        self.ema = [10**6] * 24
+        self.ema_val = [10**6] * 24
+        self.ema_alpha = 0.1
+        self.price_alpha = 0.5
 
-    def visualize_trajectory(self, states, from_indx_, to_indx_, nmbr_days_in_fig=3, animate=False, spam_protection=True):
+    def visualize_trajectory(self, states, from_indx_, to_indx_,
+                             nmbr_days_in_fig=3, animate=False,
+                             spam_protection=True):
         end = to_indx_ if to_indx_ is None else to_indx_*24
         window = states[from_indx_*24:end]
         if spam_protection:
@@ -230,7 +243,9 @@ class TabularQActor(Actor):
                 # Update the last 24 hours of data
                 self.fig, self.ax1 = plt.subplots(figsize=(nmbr_days_in_fig*6, 10))
                 self.ax2 = self.ax1.twinx()
-                self.plot_prices, hours, days, self.plot_storages, self.plot_actions, self.running_average_plot, self.reward_plot = list(zip(*window[first_state:first_state+nmbr_days_in_fig*24]))
+                (self.plot_prices, hours, days, self.plot_storages, self.plot_actions,
+                 self.running_average_plot, self.reward_plot) = list(
+                     zip(*window[first_state:first_state+nmbr_days_in_fig*24]))
 
                 self.time_labels = []
                 for hour, day in zip(hours, days):
@@ -328,31 +343,29 @@ class TabularQActor(Actor):
         dims = {
             'price_bins': 0,
             'hours': 1,
-            'storage_bins': 2,
+            'distance to force-buy': 2,
             'actions': 3
         }
 
         action_labels = {
             0: "Sell: -1", 
-            1: "Sell: -0.5", 
-            2: "No Action", 
-            3: "Buy: 0.5", 
-            4: "Buy: 1" 
+            1: "No Action", 
+            2: "Buy: 0.5", 
+            3: "Buy: 1" 
         }
 
         storage_labels = { 
-            0: "0 to 30", 
-            1: "30 to 60", 
-            2: "60 to 90", 
-            3: "90 to 120", 
-            4: "120 and up" 
+            0: "0 to 6", 
+            1: "6 to 12", 
+            2: "12 to 14", 
+            3: "14 to 17"
         }
 
-        if color_mapping_dim not in ['storage_bins', 'actions']:
+        if color_mapping_dim not in ['distance to force-buy', 'actions']:
             raise ValueError("color_mapping_dim must be one of 'storage_bins' or 'actions'")
 
         color_dim_index = dims[color_mapping_dim]
-        other_dim = 'storage_bins' if color_mapping_dim == 'actions' else 'actions'
+        other_dim = 'distance to force-buy' if color_mapping_dim == 'actions' else 'actions'
         other_dim_index = dims[other_dim]
 
         # Get the range of values for the color dimension
@@ -448,29 +461,62 @@ class TabularQActor(Actor):
         plt.ylabel("Validation Reward")
         plt.show()
 
-    def updateAverage(self, newPrice:int, train=True):
+    def update_ema(self, hour, price, train=True):
+        """
+        Update the exponential running average for a given hour and price.
+
+        :param hour: Hour of the day (integer).
+        :param price: Observed price at the given hour (float).
+        """
+        hour = int(hour) - 1
+        
+        if train:
+            current_avg = self.ema[hour]
+            if current_avg == 10**6:
+                # Initialize the running average if it's still at the default value
+                self.ema[hour] = price
+            else:
+                # Update the running average using the exponential formula
+                self.ema[hour] = self.ema_alpha * price + (1 - self.ema_alpha) * current_avg
+        else:
+            current_avg = self.ema_val[hour]
+            if current_avg == 10**6:
+                # Initialize the running average if it's still at the default value
+                self.ema_val[hour] = price
+            else:
+                # Update the running average using the exponential formula
+                self.ema_val[hour] = self.ema_alpha * price + (1 - self.ema_alpha) * current_avg            
+
+    def update_sma(self, newPrice:int, train=True):
         if train == True:
             if len(self.price_queue) == self.amount_of_prices:
-                self.current_moving_average -= self.price_queue[0]/self.amount_of_prices
-                self.current_moving_average += newPrice/self.amount_of_prices
+                self.sma -= self.price_queue[0]/self.amount_of_prices
+                self.sma += newPrice/self.amount_of_prices
                 self.price_queue.pop(0)
                 self.price_queue.append(newPrice)
             else:
                 self.price_queue.append(newPrice)
-                self.current_moving_average = sum(self.price_queue)/len(self.price_queue)
+                self.sma = sum(self.price_queue)/len(self.price_queue)
         else:
             if len(self.price_queue_val) == self.amount_of_prices:
-                self.current_moving_average_val -= self.price_queue_val[0]/self.amount_of_prices
-                self.current_moving_average_val += newPrice/self.amount_of_prices
+                self.sma_val -= self.price_queue_val[0]/self.amount_of_prices
+                self.sma_val += newPrice/self.amount_of_prices
                 self.price_queue_val.pop(0)
                 self.price_queue_val.append(newPrice)
             else:
                 self.price_queue_val.append(newPrice)
-                self.current_moving_average_val = sum(self.price_queue_val)/len(self.price_queue_val)
+                self.sma_val = sum(self.price_queue_val)/len(self.price_queue_val)
+    
+    def calculate_distance_to_force_buy(self, storage, hour):
+        remaining_purchases = (120 - storage) / 10
+        distance_to_force_buy = 24 - remaining_purchases
+        return distance_to_force_buy
+
 
     def train(self):
         print('Training the tabular Q-learning agent...')
         validation_rewards = []
+        external_rewards = []
         for episode in range(self.num_episodes):
             #print(f"Episode {episode}")
             state = self.environment_train.reset()
@@ -479,9 +525,10 @@ class TabularQActor(Actor):
                 storage, price, hour, day = state
                 #price_bin_index = np.digitize(price, self.bins) - 1
                 # instead of price bins, use difference from moving average
-                fraction = self.calculate_fraction(price)
+                fraction = self.calculate_fraction(hour, price)
                 #print(fraction)
-                self.updateAverage(price)
+                self.update_sma(price)
+                self.update_ema(hour, price)
                 #print(f'Current average: {self.current_average}')
 
                 price_bin_index = np.digitize(fraction, self.price_bins) - 1
@@ -489,7 +536,8 @@ class TabularQActor(Actor):
                 hour_index = int(hour-1)
                 if hour_index == 0:
                     self.sell_times = 0
-                storage_index = np.digitize(storage, self.storage_bins) - 1
+                storage_dist2buy = self.calculate_distance_to_force_buy(storage, hour)
+                storage_index = np.digitize(storage_dist2buy, self.storage_dist2buy_bins) - 1
                 if np.random.rand() < self.epsilon:
                     #print("Explore")
                     action_idx = random.randrange(len(self.actions)) # Explore
@@ -506,14 +554,15 @@ class TabularQActor(Actor):
                         self.last_purchases.pop(0)
 
                 #print(f'Action: {action}')
-                reward = self.calculate_reward(action,self.price_bins[price_bin_index],self.storage_bins[storage_index], price)
-
 
                 next_state, reward, terminated = self.environment_train.step(action)
                 next_storage, next_price, next_hour, _ = next_state
-                next_price_bin_index = np.digitize(next_price, self.price_bins) - 1
+                next_fraction = self.calculate_fraction(next_hour, next_price)
+                next_price_bin_index = np.digitize(next_fraction, self.price_bins) - 1
                 next_hour_index = int(next_hour-1)
-                next_storage_index = np.digitize(next_storage, self.storage_bins) - 1
+                next_storage_index = np.digitize(next_storage, self.storage_dist2buy_bins) - 1
+
+                internal_reward = self.calculate_reward(reward, action,self.price_bins[price_bin_index],self.storage_dist2buy_bins[storage_index], price)
 
                 #print(reward,action)
                 # Update Q-value
@@ -526,7 +575,7 @@ class TabularQActor(Actor):
                 
                 best_next_action = np.argmax(self.Q[next_price_bin_index, next_hour_index, next_storage_index, :])
                 #print(f"Reward: {reward}, Best Next Q: {self.Q[next_price_bin_index, next_hour_index, next_storage_index, best_next_action]}")
-                self.Q[price_bin_index, hour_index, storage_index, action_idx] += self.alpha * (reward + self.gamma * self.Q[next_price_bin_index, next_hour_index, next_storage_index, best_next_action] - self.Q[price_bin_index, hour_index, storage_index, action_idx])
+                self.Q[price_bin_index, hour_index, storage_index, action_idx] += self.alpha * (internal_reward + self.gamma * self.Q[next_price_bin_index, next_hour_index, next_storage_index, best_next_action] - self.Q[price_bin_index, hour_index, storage_index, action_idx])
 
                 #print(f"After Update: Q[{price_bin_index}, {hour_index}, {storage_index}, {action_idx}] = {self.Q[price_bin_index, hour_index, storage_index, action_idx]}")
                 #print(f'Epsilon: {self.epsilon}')
@@ -539,26 +588,32 @@ class TabularQActor(Actor):
             if self.epsilon < self.min_epsilon:
                 self.epsilon = self.min_epsilon
             
-            validation_rewards.append(self.val())
+            val_r = self.val()
+            validation_rewards.append(val_r[0])
+            external_rewards.append(val_r[1])
             if episode % 10 == 0:
-                print(f'-- Finished training {episode} episodes, epsilon = {round(self.epsilon, 4)}, validation reward = {round(validation_rewards[-1], 1):,}...')
+                print(f'-- Finished training {episode} episodes, epsilon = {round(self.epsilon, 4)}\n' \
+                      f'internal validation reward = {round(validation_rewards[-1], 1):,}\n' \
+                      f'external validation reward = {round(external_rewards[-1], 1):,}')
         with open("tab_q_val_rewards.csv", "w") as f:
             writer = csv.writer(f)
             writer.writerow(["Validation Rewards"])
             for row in validation_rewards:
                 writer.writerow([row])
-        self.visualize_q_values('storage_bins')
+        self.visualize_q_values('distance to force-buy')
         self.visualize_q_values('actions')
         
     def act(self, state):
         storage, price, hour, _ = state
-        fraction = self.calculate_fraction(price, train=False)
-        self.updateAverage(price, train=False)
+        fraction = self.calculate_fraction(hour, price, train=False)
+        self.update_sma(price, train=False)
+        self.update_ema(hour, price, train=False)
         price_bin_index = np.digitize(fraction, self.price_bins) - 1
         hour_index = int(hour-1)
         if hour_index == 0:
             self.sell_times = 0
-        storage_index = np.digitize(storage, self.storage_bins) - 1
+        storage_fraction = self.calculate_distance_to_force_buy(storage, hour)
+        storage_index = np.digitize(storage_fraction, self.storage_dist2buy_bins) - 1
         #print(f"Price: {price}, fraction: {fraction}, current average: {self.current_average_val}, price bin: {price_bin_index}")
 
         # Select the best action (greedy policy)
@@ -574,23 +629,27 @@ class TabularQActor(Actor):
         #print(f"Best action index: {best_action_index}, action: {best_action}")
         return best_action
 
-    def calculate_fraction(self, price, train=True):
+    def calculate_fraction(self, hour, price, train=True):
+        hour = int(hour) - 1
         if train == True:
-            if self.current_moving_average == 0:
-                fraction = 0
-            else:     
-                difference = price - self.current_moving_average
-                fraction  = difference/self.current_moving_average
-            return fraction
-        else:
-            if self.current_moving_average_val == 0:
+            if self.sma == 0 or self.ema[hour] == 0:
                 fraction = 0
             else:
-                difference = price - self.current_moving_average_val
-                fraction = difference/self.current_moving_average_val
+                sma_frac = price / self.sma
+                ema_frac = price / self.ema[hour]
+                fraction  = (sma_frac * self.price_alpha) + (ema_frac * (1 - self.price_alpha))
+            return fraction
+        else:
+            if self.sma_val == 0 or self.ema_val[hour] == 0:
+                fraction = 0
+            else:
+                sma_frac_val = price / self.sma_val
+                ema_frac_val = price / self.ema_val[hour]
+                fraction  = (sma_frac_val * self.price_alpha) + (ema_frac_val * (1 - self.price_alpha))
             return fraction
 
-    def calculate_reward(self,action,price_difference,storage_level,current_price,reward_parameter = 8):
+
+    def calculate_reward(self,reward,action,price_difference,storage_level,current_price,reward_parameter = 4.5):
 
         #print(f'current price = {price_difference}')
         #print(f'positive reward = {1* ((price_difference * -1) + (reward_parameter * ((120 - storage_level)/120)))}')
@@ -617,6 +676,7 @@ class TabularQActor(Actor):
 
     def val(self):
         aggregate_reward = 0
+        aggregate_test_reward = 0
         terminated = False
         state = self.environment_test.reset()
 
@@ -628,10 +688,12 @@ class TabularQActor(Actor):
             next_state, reward, terminated = self.environment_test.step(action)
             state = next_state
             storage, price, hour, day = state
-            fraction = self.calculate_fraction(price)
+            fraction = self.calculate_fraction(hour, price)
             price_bin_index = np.digitize(fraction, self.price_bins) - 1
-            storage_index = np.digitize(storage, self.storage_bins) - 1
+            storage_fraction = self.calculate_distance_to_force_buy(storage, hour)
+            storage_index = np.digitize(storage_fraction, self.storage_dist2buy_bins) - 1
 
-            aggregate_reward += self.calculate_reward(action,self.price_bins[price_bin_index],self.storage_bins[storage_index],price)
+            aggregate_reward += self.calculate_reward(reward, action,self.price_bins[price_bin_index],self.storage_dist2buy_bins[storage_index],price)
+            aggregate_test_reward += reward
 
-        return aggregate_reward
+        return aggregate_reward, aggregate_test_reward
