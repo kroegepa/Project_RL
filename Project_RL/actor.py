@@ -8,6 +8,7 @@ from mpl_toolkits.mplot3d import Axes3D
 import inflect
 o_suffix = inflect.engine()
 import csv
+from numpy.random import default_rng
 
 
 
@@ -158,7 +159,7 @@ class TabularQActor(Actor):
                  amount_of_prices: int=161, threshold: float=0.1, alpha=0.005,
                  gamma=0.9, starting_epsilon=0.9, epsilon_decay_rate=0.9995,
                  min_epsilon=0.1, num_episodes=5000,
-                 profit_calculation_window=48, Q_init_value=30):
+                 profit_calculation_window=48, Q_init_value=45):
         # Parameters
         self.sell_times = 0
         self.alpha = alpha
@@ -513,6 +514,7 @@ class TabularQActor(Actor):
         validation_rewards = []
         external_rewards = []
         for episode in range(self.num_episodes):
+            rng = default_rng()
             #print(f"Episode {episode}")
             state = self.environment_train.reset()
             for t in range(self.max_steps):
@@ -532,9 +534,9 @@ class TabularQActor(Actor):
                 if hour_index == 0:
                     self.sell_times = 0
                 storage_index = np.digitize(storage_fraction, self.storage_bins) - 1
-                if np.random.rand() < self.epsilon:
+                if rng.random() < self.epsilon:
                     #print("Explore")
-                    action_idx = random.randrange(len(self.actions)) # Explore
+                    action_idx = rng.integers(len(self.actions)) # Explore
                 else:
                     #print("Exploit")
                     action_idx = np.argmax(self.Q[price_bin_index, hour_index, storage_index, :]) # Exploit
