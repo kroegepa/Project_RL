@@ -501,7 +501,7 @@ class TabularQActor(Actor):
             11: 150, 12: 160, 13: 170, 14: 170, 15: 170,
             16: 170, 17: 170, 18: 170, 19: 170, 20: 170,
             21: 170, 22: 170, 23: 170, 24: 170}
-        return current_storage / (max_possible_storage_vals[current_hour] - force_buying_vals[current_hour])
+        return (current_storage - force_buying_vals[current_hour]) / (max_possible_storage_vals[current_hour] - force_buying_vals[current_hour])
 
     def train(self):
         print('Training the tabular Q-learning agent...')
