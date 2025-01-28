@@ -2,8 +2,12 @@ import actor
 import numpy as np
 from env import DataCenterEnv
 
-trajectory_data = np.loadtxt("tab_q_val_trajectory.csv", delimiter=",", skiprows=1)
-validation_reward_data = np.loadtxt("tab_q_val_rewards.csv", delimiter=",", skiprows=1)
+
+trajectory_path = "tab_q_val_trajectory.csv"
+validation_reward_path = "tab_q_val_rewards.csv"
+
+trajectory_data = np.loadtxt(trajectory_path, delimiter=",", skiprows=1)
+validation_reward_data = np.loadtxt(validation_reward_path, delimiter=",", skiprows=1)
 
 environment_train = DataCenterEnv('train.xlsx')
 environment_test = DataCenterEnv('validate.xlsx')
