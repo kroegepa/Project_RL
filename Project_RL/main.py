@@ -25,8 +25,9 @@ if actor_type == 'uniform_baseline':
     agent = actor.UniformBuyActor()
 elif actor_type == 'tabular_q':
     agent = actor.TabularQActor(environment_train, environment_test,
-                                num_episodes=1001, starting_epsilon=0.4,
-                                min_epsilon=0.01, epsilon_decay_rate=0.9999)
+                                num_episodes=1001, starting_epsilon=1,
+                                min_epsilon=0.1, epsilon_decay_rate=0.9997,
+                                alpha=0.01)
     agent.train()
 elif actor_type == 'SMA':
     agent = actor.SimpleMovingAverageActor()
@@ -43,16 +44,17 @@ with open("tab_q_val_trajectory.csv", "w") as file:
     while not terminated:
         # agent is your own imported agent class
         action = agent.act(state)
+        next_state, reward, terminated = environment_test.step(action)
         if actor_type == 'tabular_q':
             storage,price,hour,day = state
             fraction = agent.calculate_fraction(price)
             price_bin_index = np.digitize(fraction, agent.bins) - 1
-            storage_index = np.digitize(storage, agent.storage_bins) - 1
-            plotting_reward = agent.calculate_reward(action,agent.bins[price_bin_index],agent.storage_bins[storage_index],price,hour)
+            storage_fraction = agent.calc_storage_fraction(storage, hour)
+            storage_index = np.digitize(storage_fraction, agent.storage_bins) - 1
+            plotting_reward = agent.calculate_reward(action,agent.bins[price_bin_index],agent.storage_bins[storage_index],price,hour,reward)
             writer.writerow([price, hour, day, storage, action, agent.current_moving_average_val, plotting_reward])
         #action = np.random.uniform(-1, 1)
         # next_state is given as: [storage_level, price, hour, day]
-        next_state, reward, terminated = environment_test.step(action)
         state = next_state
         aggregate_reward += reward
         storage,price,hour,day = state
