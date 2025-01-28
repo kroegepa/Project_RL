@@ -225,7 +225,7 @@ class TabularQActor(Actor):
         else:
             for first_state in range(0, len(window), nmbr_days_in_fig*24):
                 # Update the last 24 hours of data
-                self.fig, self.ax1 = plt.subplots(figsize=(nmbr_days_in_fig*6, 10))
+                self.fig, self.ax1 = plt.subplots(figsize=(nmbr_days_in_fig*4, 8))
                 self.ax2 = self.ax1.twinx()
                 self.plot_prices, hours, days, self.plot_storages, self.plot_actions, self.running_average_plot, self.reward_plot = list(zip(*window[first_state:first_state+nmbr_days_in_fig*24]))
 
@@ -438,11 +438,22 @@ class TabularQActor(Actor):
         plt.show()
 
     def plot_rewards_during_training(self, reward_list):
-        plt.figure(figsize=(12, 6))
-        plt.plot(range(len(reward_list)), reward_list, "-", color="blue")
+        internal_reward, external_reward = zip(*reward_list)
+        self.fig, self.ax1 = plt.subplots(figsize=(12, 8))
+        self.ax2 = self.ax1.twinx()
+        self.ax1.plot(range(len(internal_reward)), internal_reward, "-", color="blue", label="Internal Reward")
+        self.ax2.plot(range(len(external_reward)), external_reward, "-", color="red", label="External Reward")
+        self.ax1.set_ylabel("Internal Reward")
+        self.ax2.set_ylabel("External Reward")
         plt.title("Validation Reward per Episode of Training")
         plt.xlabel("Episodes")
-        plt.ylabel("Validation Reward")
+        # Combine legends
+        handles_ax1, labels_ax1 = self.ax1.get_legend_handles_labels()
+        handles_ax2, labels_ax2 = self.ax2.get_legend_handles_labels()
+
+        handles = handles_ax1 + handles_ax2
+        labels = labels_ax1 + labels_ax2
+        self.fig.legend(handles, labels, loc="lower center", bbox_to_anchor=(0.5, 0.02), ncol=len(labels), frameon=True)
         plt.show()
 
     def updateAverage(self, newPrice:int, train=True):
