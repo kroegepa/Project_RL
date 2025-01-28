@@ -25,8 +25,8 @@ if actor_type == 'uniform_baseline':
     agent = actor.UniformBuyActor()
 elif actor_type == 'tabular_q':
     agent = actor.TabularQActor(environment_train, environment_test,
-                                num_episodes=1001, starting_epsilon=1,
-                                min_epsilon=0.1, epsilon_decay_rate=0.9997,
+                                num_episodes=10000, starting_epsilon=1,
+                                min_epsilon=0.05, epsilon_decay_rate=0.9995,
                                 alpha=0.01)
     agent.train()
 elif actor_type == 'SMA':
