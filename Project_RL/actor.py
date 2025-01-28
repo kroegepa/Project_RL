@@ -154,8 +154,11 @@ class SimpleMovingAverageActor(Actor):
         
 
 class TabularQActor(Actor):
-    def __init__(self, environment_train, environment_test, amount_of_prices: int=161, threshold: float=0.1, alpha=0.005, gamma=0.9, starting_epsilon=1, epsilon_decay_rate=0.9995,
-                min_epsilon=0.1, num_episodes=5000):
+    def __init__(self, environment_train, environment_test,
+                 amount_of_prices: int=161, threshold: float=0.1, alpha=0.005,
+                 gamma=0.9, starting_epsilon=1, epsilon_decay_rate=0.9995,
+                 min_epsilon=0.1, num_episodes=5000,
+                 profit_calculation_window=48, Q_init_value=10**3):
         # Parameters
         self.sell_times = 0
         self.alpha = alpha
@@ -171,7 +174,13 @@ class TabularQActor(Actor):
         self.actions = [-1, -0.5, 0, 0.5, 1]  # Discrete actions
         self.max_steps = len(environment_train.timestamps) * 24 - 1
         self.storage_bins = [0, 30, 60, 90, 120]
-        self.Q = np.zeros((len(self.bins), self.num_hours, len(self.storage_bins), len(self.actions)))
+        self.Q_init_value = Q_init_value
+        self.Q = np.full((len(self.bins),
+                          self.num_hours,
+                          len(self.storage_bins),
+                          len(self.actions)),
+                          self.Q_init_value)
+        
         self.environment_train = environment_train
         self.environment_test = environment_test
 
@@ -184,6 +193,8 @@ class TabularQActor(Actor):
         self.amount_of_prices = amount_of_prices
         #Deviation from average price to trigger buy sell action
         self.threshold = threshold
+        self.last_purchases = []
+        self.profit_calculation_window = profit_calculation_window
 
     def visualize_trajectory(self, states, from_indx_, to_indx_, nmbr_days_in_fig=3, animate=False, spam_protection=True):
         end = to_indx_ if to_indx_ is None else to_indx_*24
@@ -519,7 +530,7 @@ class TabularQActor(Actor):
                 next_hour_index = int(next_hour-1)
                 next_storage_index = np.digitize(next_storage, self.storage_bins) - 1
 
-                reward = self.calculate_reward(action,self.bins[price_bin_index],self.storage_bins[storage_index])
+                reward = self.calculate_reward(action,self.bins[price_bin_index],self.storage_bins[storage_index],price)
                 #print(reward,action)
                 # Update Q-value
                 # if (14 > hour > 11 and storage < 80):
@@ -595,20 +606,24 @@ class TabularQActor(Actor):
                 fraction = difference/self.current_moving_average_val
             return fraction
 
-    def calculate_reward(self,action,price_difference,storage_level,reward_parameter = 4.2):
+    def calculate_reward(self,action,price_difference,storage_level,current_price,reward_parameter = 4.2):
 
         #print(f'current price = {price_difference}')
         #print(f'positive reward = {1* ((price_difference * -1) + (reward_parameter * ((120 - storage_level)/120)))}')
         #print(f'negative reward = {price_difference}')
 
             
-        if action < 0: # sell
+        if action < 0: # Selling
             if self.sell_times >= 4:
                 return -10
-            else:
+            elif len(self.last_purchases) == 0:
                 return action * (price_difference - 0.2)* -1
+            else:
+                most_expensive_purchase = max(self.last_purchases)
+                potential_profit = ((current_price * 0.8) - most_expensive_purchase) / most_expensive_purchase if most_expensive_purchase != 0 else 0
+                return action * potential_profit * -1
         
-        elif action == 0: # do nothing
+        elif action == 0: # Do nothing
             return 0
         
         elif action > 0: # buy
@@ -634,7 +649,7 @@ class TabularQActor(Actor):
             price_bin_index = np.digitize(fraction, self.bins) - 1
             storage_index = np.digitize(storage, self.storage_bins) - 1
 
-            aggregate_reward += self.calculate_reward(action,self.bins[price_bin_index],self.storage_bins[storage_index])
+            aggregate_reward += self.calculate_reward(action,self.bins[price_bin_index],self.storage_bins[storage_index],price)
             aggregate_test_reward += reward
 
         return aggregate_reward, aggregate_test_reward
