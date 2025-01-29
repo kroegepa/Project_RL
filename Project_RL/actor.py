@@ -513,8 +513,9 @@ class TabularQActor(Actor):
         print('Training the tabular Q-learning agent...')
         validation_rewards = []
         external_rewards = []
+        rng = default_rng()
+
         for episode in range(self.num_episodes):
-            rng = default_rng()
             #print(f"Episode {episode}")
             state = self.environment_train.reset()
             for t in range(self.max_steps):
@@ -678,15 +679,19 @@ class TabularQActor(Actor):
             if price_difference == 0:
                 return 0.5
             return 0
-        
-        elif action > 0: # Buying
+
+        elif current_hour <= 12 :
+            buy_when_low_storage_reward = max(0, (0.4 - storage_level)/0.4)
+            return action * price_difference * -1 + reward_parameter * buy_when_low_storage_reward
+        else: # Buying
             if storage_level == self.storage_bins[-1]:
                 return -5
-            buy_early_reward = max(0, (1 / (6 - current_hour))) if current_hour != 6 else 0
-            buy_when_low_storage_reward = max(0, (0.4 - storage_level)/0.4)
-            return action * (price_difference * -1) + (
-                reward_parameter * buy_early_reward) + (
-                    reward_parameter * buy_when_low_storage_reward) #(130 - storage_level)/130
+            #buy_early_reward = max(0, (1 / (6 - current_hour))) if current_hour != 6 else 0
+            #buy_when_low_storage_reward = max(0, (0.4 - storage_level)/0.4)
+            return action * (price_difference * -1)
+        # (
+                # reward_parameter * buy_early_reward) + (
+                #     reward_parameter * buy_when_low_storage_reward) #(130 - storage_level)/130
 
     def val(self):
         aggregate_reward = 0
