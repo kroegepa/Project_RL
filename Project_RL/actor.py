@@ -155,7 +155,7 @@ class SimpleMovingAverageActor(Actor):
         
 
 class TabularQActor(Actor):
-    def __init__(self, environment_train, environment_test,
+    def __init__(self, environment_test, environment_train=None,
                  amount_of_prices: int=161, threshold: float=0.1, alpha=0.005,
                  gamma=0.9, starting_epsilon=0.9, epsilon_decay_rate=0.9995,
                  min_epsilon=0.1, num_episodes=5000,
@@ -174,7 +174,7 @@ class TabularQActor(Actor):
         self.price_bins = [-2, -0.15, 0.25] # bins for price difference from average
         self.num_hours = 24
         self.actions = [-1, 0, 1]  # Discrete actions
-        self.max_steps = len(environment_train.timestamps) * 24 - 1
+        #self.max_steps = len(environment_train.timestamps) * 24 - 1
         self.storage_bins = [0, 0.4, 0.95]
         self.profit_bools = [True, False]
         self.Q_init_value = Q_init_value
@@ -660,7 +660,7 @@ class TabularQActor(Actor):
         for episode in range(self.num_episodes):
             #print(f"Episode {episode}")
             state = self.environment_train.reset()
-            for t in range(self.max_steps):
+            for t in range(len(environment_train.timestamps) * 24 - 1):
                 # Choose action using epsilon-greedy policy
                 storage, price, hour, day = state
                 #price_bin_index = np.digitize(price, self.bins) - 1
@@ -756,13 +756,13 @@ class TabularQActor(Actor):
                 print(f'-- Finished training {episode} episodes, epsilon = {round(self.epsilon, 4)}\n' \
                       f'internal validation reward = {round(validation_rewards[-1], 1):,}\n' \
                       f'external validation reward = {round(external_rewards[-1], 1):,}')
-        with open("final_tab_q_val_rewards.csv", "w") as f:
+        with open("final_tab_q_val_rewards_v2.csv", "w") as f:
             writer = csv.writer(f)
             writer.writerow(["Validation Rewards", "External Rewards"])
             for internal, external in zip(validation_rewards, external_rewards):
                 writer.writerow([internal, external])
         #np.savetxt('tab_q_profit_margins.csv', self.all_profit_margins, delimiter=',')
-        np.save('final_tab_q_Q_tensor.npy', self.Q)
+        np.save('final_tab_q_Q_tensor_v2.npy', self.Q)
         #self.visualize_q_values('storage')
         #self.visualize_q_values('action')
         
