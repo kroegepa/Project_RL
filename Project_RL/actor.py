@@ -133,7 +133,6 @@ class TabularQActor(Actor):
         self.price_bins = [-2, -0.15, 0.25] 
         self.num_hours = 24
         self.actions = [-1, 0, 1]  # Discrete actions
-        #self.max_steps = len(environment_train.timestamps) * 24 - 1
         self.storage_bins = [0, 0.4, 0.95]
         self.profit_bools = [True, False]
         self.Q_init_value = Q_init_value
@@ -371,7 +370,7 @@ class TabularQActor(Actor):
 
         for episode in range(self.num_episodes):
             state = self.environment_train.reset()
-            for t in range(len(environment_train.timestamps) * 24 - 1):
+            for t in range(len(self.environment_train.timestamps) * 24 - 1):
                 # Choose action using epsilon-greedy policy
                 storage, price, hour, day = state
                 fraction = self.calculate_fraction(price)
@@ -442,14 +441,12 @@ class TabularQActor(Actor):
                 print(f'-- Finished training {episode} episodes, epsilon = {round(self.epsilon, 4)}\n' \
                       f'internal validation reward = {round(validation_rewards[-1], 1):,}\n' \
                       f'external validation reward = {round(external_rewards[-1], 1):,}')
-        with open("final_tab_q_val_rewards_v2.csv", "w") as f:
+        with open("rewards_.csv", "w") as f:
             writer = csv.writer(f)
             writer.writerow(["Validation Rewards", "External Rewards"])
             for internal, external in zip(validation_rewards, external_rewards):
                 writer.writerow([internal, external])
-        np.save('final_tab_q_Q_tensor.npy', self.Q)
-        #self.visualize_q_values('storage')
-        #self.visualize_q_values('action')
+        np.save('Q_.npy', self.Q)
         
     def act(self, state):
         storage, price, hour, _ = state

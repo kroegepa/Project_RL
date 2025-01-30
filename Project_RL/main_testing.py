@@ -14,7 +14,8 @@ path_to_Q = args.path_q
 environment = DataCenterEnv(path_to_dataset)
 
 Q = np.load(path_to_Q)
-agent = actor.TabularQActor(Q=Q)
+agent = actor.TabularQActor(environment)
+agent.Q = Q
 
 aggregate_reward = 0
 terminated = False
