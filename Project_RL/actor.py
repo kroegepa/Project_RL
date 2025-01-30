@@ -651,7 +651,7 @@ class TabularQActor(Actor):
         else:
             return False
 
-    def train(self, file_name):
+    def train(self):
         print('Training the tabular Q-learning agent...')
         validation_rewards = []
         external_rewards = []
@@ -756,13 +756,13 @@ class TabularQActor(Actor):
                 print(f'-- Finished training {episode} episodes, epsilon = {round(self.epsilon, 4)}\n' \
                       f'internal validation reward = {round(validation_rewards[-1], 1):,}\n' \
                       f'external validation reward = {round(external_rewards[-1], 1):,}')
-        with open(f"{file_name}_tab_q_val_rewards.csv", "w") as f:
+        with open("final_tab_q_val_rewards.csv", "w") as f:
             writer = csv.writer(f)
             writer.writerow(["Validation Rewards", "External Rewards"])
             for internal, external in zip(validation_rewards, external_rewards):
                 writer.writerow([internal, external])
         #np.savetxt('tab_q_profit_margins.csv', self.all_profit_margins, delimiter=',')
-        np.save(f'{file_name}_tab_q_Q_tensor.npy', self.Q)
+        np.save('final_tab_q_Q_tensor.npy', self.Q)
         #self.visualize_q_values('storage')
         #self.visualize_q_values('action')
         
