@@ -829,11 +829,11 @@ class TabularQActor(Actor):
                 potential_profit = ((current_price * 0.8) - most_expensive_purchase) / most_expensive_purchase if most_expensive_purchase != 0 else 0
                 return action * potential_profit * -100
             else:
-                return -100
+                return -50
         
         elif action == 0: # Do nothing
             if price_difference >= self.price_bins[-1] and not profit_bool:
-                return 1
+                return 5
             return 0
 
         elif action > 0: # Buying
