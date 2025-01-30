@@ -21,12 +21,15 @@ environment_train = DataCenterEnv(path_to_dataset_train)
 environment_test = DataCenterEnv(path_to_dataset_test)
 
 
-profitability_margins = [0.25, 0.3, 0.35, 0.4, 0.45, 0.5]
-last_purchases_window = [24, 36, 48, 60, 72, 84, 96]
-gamma = [0.85, 0.9, 0.95, 0.99]
-alpha = [0.05, 0.01, 0.005, 0.001]
-reward_param = [10, 20, 30, 40]
+profitability_margins = [0.25, 0.35, 0.45]
+last_purchases_window = [24, 48, 72, 96]
+gamma = [0.9, 0.99]
+alpha = [0.01, 0.005, 0.001]
+reward_param = [20, 35]
 
+with open("hyper_param_tab_q_val_test.csv", "w") as file:
+    writer = csv.writer(file)
+    writer.writerow(["total validation reward", "profitability_margins", "last_purchases_window", "gamma", "alpha", "reward_param"])
 
 for p, w, g, a, r in product(
     profitability_margins, last_purchases_window, gamma, alpha, reward_param
@@ -42,9 +45,13 @@ for p, w, g, a, r in product(
         agent = actor.UniformBuyActor()
     elif actor_type == 'tabular_q':
         agent = actor.TabularQActor(environment_train, environment_test,
-                                    num_episodes=300, starting_epsilon=0.4,
-                                    min_epsilon=0.1, epsilon_decay_rate=0.999,
-                                    alpha=0.01)
+                                    num_episodes=1500, starting_epsilon=1,
+                                    min_epsilon=0.1, epsilon_decay_rate=0.9995,
+                                    minimum_profit=p,
+                                    profit_calculation_window=w,
+                                    gamma=g,
+                                    alpha=a,
+                                    reward_param=r)
         agent.train(test_name)
     elif actor_type == 'SMA':
         agent = actor.SimpleMovingAverageActor()
@@ -97,4 +104,7 @@ for p, w, g, a, r in product(
     #print(average_filled/amount_of_days)
     #print(agent.Q)
     #print(np.shape(agent.Q))
+    with open("hyper_param_tab_q_val_test.csv", "a") as file:
+        writer = csv.writer(file)
+        writer.writerow([round(aggregate_reward), p, w, g, a, r])
     break

@@ -652,7 +652,7 @@ class TabularQActor(Actor):
             return False
 
     def train(self, file_name):
-        print('Training the tabular Q-learning agent...')
+        #print('Training the tabular Q-learning agent...')
         validation_rewards = []
         external_rewards = []
         rng = default_rng()
@@ -752,7 +752,7 @@ class TabularQActor(Actor):
             val_r = self.val()
             validation_rewards.append(val_r[0])
             external_rewards.append(val_r[1])
-            if episode % 10 == 0:
+            if episode % 1000 == 0 and False:
                 print(f'-- Finished training {episode} episodes, epsilon = {round(self.epsilon, 4)}\n' \
                       f'internal validation reward = {round(validation_rewards[-1], 1):,}\n' \
                       f'external validation reward = {round(external_rewards[-1], 1):,}')
