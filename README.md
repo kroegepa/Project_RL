@@ -1,4 +1,5 @@
 TRAINING THE MODEL:
+
 When training the tabular Q-learning agent, you need to run the file main.py as follows:
 
 $ python Project_RL/main.py
