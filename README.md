@@ -5,4 +5,4 @@ It will train and validate the agent and save the Q-table as a .npy file, the re
 
 TESTING THE MODEL:
 Run the file main_testing.py as follows:
-$ python Project_RL/main_testing.py --path_data {}
+$ python Project_RL/main_testing.py --path_data {path_to_test_data} --path_q Project_RL/Q.npy
